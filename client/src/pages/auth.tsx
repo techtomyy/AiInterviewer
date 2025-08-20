@@ -53,7 +53,7 @@ export default function AuthPage() {
 
   return (
     <div className="flex h-screen">
-      {/* Left side with image */}
+      {/* Left side with images */}
       <div className="hidden md:flex w-1/2 relative">
         {/* Background video */}
         <video
