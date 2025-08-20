@@ -11,12 +11,12 @@ interface Session {
 }
 
 interface ProgressChartProps {
-  sessions: Session[];
+  sessions?: Session[];  // make it optional
 }
 
-export default function ProgressChart({ sessions }: ProgressChartProps) {
+export default function ProgressChart({ sessions = [] }: ProgressChartProps) {
   const chartData = useMemo(() => {
-    if (!sessions.length) {
+    if (!sessions || sessions.length === 0) {
       return [
         { date: '2024-01-01', overall: 7.2, speech: 7.0, confidence: 6.8, eyeContact: 7.5 },
         { date: '2024-01-08', overall: 7.8, speech: 7.5, confidence: 7.2, eyeContact: 8.0 },
@@ -28,10 +28,7 @@ export default function ProgressChart({ sessions }: ProgressChartProps) {
     return sessions
       .filter(session => session.overallScore !== undefined)
       .map(session => ({
-        date: new Date(session.createdAt).toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric' 
-        }),
+        date: new Date(session.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         overall: Number((session.overallScore || 0).toFixed(1)),
         speech: Number((session.speechClarityScore || 0).toFixed(1)),
         confidence: Number((session.confidenceScore || 0).toFixed(1)),
@@ -39,8 +36,9 @@ export default function ProgressChart({ sessions }: ProgressChartProps) {
         fullDate: session.createdAt
       }))
       .sort((a, b) => new Date(a.fullDate).getTime() - new Date(b.fullDate).getTime())
-      .slice(-10); // Show last 10 sessions
+      .slice(-10);
   }, [sessions]);
+
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {

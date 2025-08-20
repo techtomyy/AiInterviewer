@@ -17,11 +17,11 @@ import {
 
 export default function Landing() {
   const handleGetStarted = () => {
-    window.location.href = "/api/login";
+    window.location.href = "/auth"; // Redirect to login endpoint by default /api/login
   };
 
   const handleSignIn = () => {
-    window.location.href = "/api/login";
+    window.location.href = "/auth"; // Redirect to login endpoint by default /api/login
   };
 
   return (

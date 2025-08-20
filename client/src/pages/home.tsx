@@ -50,7 +50,7 @@ export default function Home() {
               <span className="text-gray-600">Welcome, {user?.firstName}!</span>
               <Button 
                 variant="outline" 
-                onClick={() => window.location.href = "/api/logout"}
+                onClick={() => window.location.href = "/auth"}//by default its /api/logout
                 data-testid="button-logout"
               >
                 Logout
