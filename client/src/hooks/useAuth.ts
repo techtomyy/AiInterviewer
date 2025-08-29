@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from "@/lib/suppabaseClient";
 import type { User } from "../types";
 
 export function useAuth() {
@@ -6,21 +7,43 @@ export function useAuth() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate authentication check
-    const timer = setTimeout(() => {
-      // Mock user data for demo purposes
-      setUser({
-        id: "1",
-        email: "demo@example.com",
-        name: "Demo User",
-        planType: "free",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email || "",
+          firstName: session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || "",
+          lastName: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
+          planType: "free",
+          createdAt: session.user.created_at || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
       setIsLoading(false);
-    }, 1000);
+    });
 
-    return () => clearTimeout(timer);
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          setUser({
+            id: session.user.id,
+            email: session.user.email || "",
+            firstName: session.user.user_metadata?.full_name?.split(' ')[0] || session.user.email?.split('@')[0] || "",
+            lastName: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || "",
+            planType: "free",
+            createdAt: session.user.created_at || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        } else {
+          setUser(null);
+        }
+        setIsLoading(false);
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
 
   return {
