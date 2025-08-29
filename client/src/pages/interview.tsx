@@ -113,6 +113,12 @@ function Interview() {
               <h1 className="text-xl font-semibold text-gray-900">Interview Session</h1>
             </div>
             <div className="flex items-center space-x-3">
+              <Link href="/camera-test">
+                <Button variant="outline" size="sm">
+                  <Video className="h-4 w-4 mr-2" />
+                  Test Camera
+                </Button>
+              </Link>
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                   <span className="text-white text-sm font-semibold">

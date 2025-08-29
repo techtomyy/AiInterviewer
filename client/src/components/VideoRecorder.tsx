@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Play, 
   Square, 
@@ -13,7 +13,8 @@ import {
   MicOff,
   Volume2,
   Eye,
-  Settings
+  Settings,
+  RefreshCw
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -37,6 +38,8 @@ export default function VideoRecorder({
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [hasRecorded, setHasRecorded] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
+  const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
+  const [isInitializing, setIsInitializing] = useState(true);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -64,39 +67,146 @@ export default function VideoRecorder({
     };
   }, [mediaStream, isAudioEnabled]);
 
-  const initializeMedia = async () => {
+  const enumerateDevices = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user'
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 44100
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      setAvailableDevices(videoDevices);
+      console.log('Available video devices:', videoDevices);
+      return videoDevices;
+    } catch (error) {
+      console.error('Error enumerating devices:', error);
+      return [];
+    }
+  };
+
+  const initializeMedia = async () => {
+    setIsInitializing(true);
+    try {
+      // First enumerate devices to help with DroidCam detection
+      const videoDevices = await enumerateDevices();
+      
+      // Try to find DroidCam device first
+      const droidCamDevice = videoDevices.find(device => 
+        device.label.toLowerCase().includes('droidcam') || 
+        device.label.toLowerCase().includes('virtual') ||
+        device.label.toLowerCase().includes('webcam') ||
+        device.label.toLowerCase().includes('android') ||
+        device.label.toLowerCase().includes('phone')
+      );
+
+      console.log('Found DroidCam device:', droidCamDevice);
+      console.log('All video devices:', videoDevices);
+
+      let stream;
+      
+      if (droidCamDevice) {
+        // Try to use DroidCam device specifically
+        try {
+          console.log('Attempting to connect to DroidCam device:', droidCamDevice.deviceId);
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: { exact: droidCamDevice.deviceId },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              sampleRate: 44100
+            }
+          });
+          console.log('Successfully connected to DroidCam device:', droidCamDevice.label);
+        } catch (droidCamError) {
+          console.log('DroidCam specific access failed, trying fallback:', droidCamError);
+          // Fallback to default constraints
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              sampleRate: 44100
+            }
+          });
         }
-      });
+      } else {
+        // No DroidCam device found, use default constraints
+        console.log('No DroidCam device found, using default constraints');
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            sampleRate: 44100
+          }
+        });
+      }
+
+      console.log('Media stream obtained:', stream);
+      console.log('Video tracks:', stream.getVideoTracks());
+      console.log('Audio tracks:', stream.getAudioTracks());
 
       setMediaStream(stream);
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Wait for video to load
+        videoRef.current.onloadedmetadata = () => {
+          console.log('Video loaded successfully');
+          console.log('Video dimensions:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+          setIsInitializing(false);
+        };
+        
+        // Add error handling for video
+        videoRef.current.onerror = (error) => {
+          console.error('Video error:', error);
+          setIsInitializing(false);
+        };
       }
 
       toast({
         title: "Camera Ready",
-        description: "Your camera and microphone are connected successfully.",
+        description: droidCamDevice 
+          ? `Connected to ${droidCamDevice.label}` 
+          : "Your camera and microphone are connected successfully.",
       });
     } catch (error) {
       console.error('Error accessing media devices:', error);
+      setIsInitializing(false);
+      
+      let errorMessage = "Unable to access camera or microphone. Please check your permissions.";
+      
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage = "Camera access denied. Please allow camera permissions and refresh the page.";
+        } else if (error.name === 'NotFoundError') {
+          errorMessage = "No camera found. Please ensure DroidCam is running and connected.";
+        } else if (error.name === 'NotReadableError') {
+          errorMessage = "Camera is in use by another application. Please close other apps using the camera.";
+        } else if (error.name === 'OverconstrainedError') {
+          errorMessage = "Camera constraints not supported. Please check DroidCam settings.";
+        } else if (error.name === 'TypeError') {
+          errorMessage = "Camera initialization error. Please restart DroidCam and refresh the page.";
+        }
+      }
+      
       toast({
         title: "Media Access Error",
-        description: "Unable to access camera or microphone. Please check your permissions.",
+        description: errorMessage,
         variant: "destructive",
       });
     }
+  };
+
+  const retryCamera = async () => {
+    cleanup();
+    await initializeMedia();
   };
 
   const setupAudioAnalysis = () => {
@@ -262,6 +372,15 @@ export default function VideoRecorder({
               </span>
             </div>
 
+            {/* Device Info Overlay */}
+            {availableDevices.length > 0 && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/80 backdrop-blur-sm rounded-lg px-3 py-1">
+                <span className="text-white text-xs">
+                  {availableDevices.length} camera{availableDevices.length !== 1 ? 's' : ''} detected
+                </span>
+              </div>
+            )}
+
             {/* Real-time AI Feedback Overlay */}
             <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg p-3 max-w-xs">
               <div className="flex items-center space-x-2 mb-2">
@@ -356,15 +475,43 @@ export default function VideoRecorder({
                     <RotateCcw className="h-4 w-4" />
                   </Button>
                 )}
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={retryCamera}
+                  className="text-white hover:bg-white/20"
+                  title="Refresh camera connection"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <Video className="text-white h-16 w-16 mx-auto mb-4" />
-              <p className="text-white text-lg mb-2">Initializing camera...</p>
-              <p className="text-gray-300 text-sm">Please allow camera and microphone access</p>
+              {isInitializing ? (
+                <>
+                  <div className="animate-spin w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <p className="text-white text-lg mb-2">Initializing camera...</p>
+                  <p className="text-gray-300 text-sm">Please allow camera and microphone access</p>
+                </>
+              ) : (
+                <>
+                  <Video className="text-white h-16 w-16 mx-auto mb-4" />
+                  <p className="text-white text-lg mb-2">Camera not available</p>
+                  <p className="text-gray-300 text-sm mb-4">Please check DroidCam connection</p>
+                  <Button
+                    onClick={retryCamera}
+                    variant="outline"
+                    className="text-white border-white hover:bg-white hover:text-gray-900"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry Camera
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -385,6 +532,28 @@ export default function VideoRecorder({
             <Badge variant={isVideoEnabled ? "default" : "destructive"}>
               {isVideoEnabled ? 'Active' : 'Disabled'}
             </Badge>
+            {availableDevices.length > 1 && (
+              <div className="mt-2">
+                <select 
+                  className="text-xs border rounded px-2 py-1 w-full"
+                  onChange={(e) => {
+                    const device = availableDevices.find(d => d.deviceId === e.target.value);
+                    if (device) {
+                      console.log('Switching to device:', device.label);
+                      // Reinitialize with specific device
+                      cleanup();
+                      initializeMedia();
+                    }
+                  }}
+                >
+                  {availableDevices.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Camera ${device.deviceId.slice(0, 8)}...`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -414,6 +583,36 @@ export default function VideoRecorder({
             <p className="text-sm text-green-700">
               Your answer has been recorded. You can retake it or proceed to the next question.
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Debug Information for DroidCam */}
+      {process.env.NODE_ENV === 'development' && (
+        <Card className="bg-gray-50 border-gray-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Debug Info (Development)</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="space-y-2 text-xs">
+              <div>
+                <strong>Available Devices:</strong> {availableDevices.length}
+              </div>
+              {availableDevices.map((device, index) => (
+                <div key={device.deviceId} className="pl-2">
+                  {index + 1}. {device.label || 'Unknown Device'} ({device.deviceId.slice(0, 8)}...)
+                </div>
+              ))}
+              <div>
+                <strong>Media Stream:</strong> {mediaStream ? 'Active' : 'None'}
+              </div>
+              <div>
+                <strong>Video Tracks:</strong> {mediaStream?.getVideoTracks().length || 0}
+              </div>
+              <div>
+                <strong>Audio Tracks:</strong> {mediaStream?.getAudioTracks().length || 0}
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}

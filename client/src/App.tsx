@@ -10,6 +10,7 @@ import Recruiter from "@/pages/recruiter";
 import Subscribe from "@/pages/subscribe";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth"; 
+import CameraTest from "@/components/CameraTest";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 
 // React Query
@@ -28,6 +29,7 @@ function Router() {
       {/* Public routes */}
       <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
+      <Route path="/camera-test" component={CameraTest} />
 
       {/* Protected routes (only if logged in) */}
       {user && (
