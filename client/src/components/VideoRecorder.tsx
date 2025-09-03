@@ -817,35 +817,7 @@ export default function VideoRecorder({
         </Card>
       )}
 
-      {/* Debug Information for DroidCam */}
-      {process.env.NODE_ENV === 'development' && (
-        <Card className="bg-gray-50 border-gray-200">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Debug Info (Development)</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4">
-            <div className="space-y-2 text-xs">
-              <div>
-                <strong>Available Devices:</strong> {availableDevices.length}
-              </div>
-              {availableDevices.map((device, index) => (
-                <div key={device.deviceId} className="pl-2">
-                  {index + 1}. {device.label || 'Unknown Device'} ({device.deviceId.slice(0, 8)}...)
-                </div>
-              ))}
-              <div>
-                <strong>Media Stream:</strong> {mediaStream ? 'Active' : 'None'}
-              </div>
-              <div>
-                <strong>Video Tracks:</strong> {mediaStream?.getVideoTracks().length || 0}
-              </div>
-              <div>
-                <strong>Audio Tracks:</strong> {mediaStream?.getAudioTracks().length || 0}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Debug Information for DroidCam removed as per user request */}
     </div>
   );
 }

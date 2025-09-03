@@ -32,7 +32,7 @@ function Interview({ user }: InterviewProps) {
     "Why are you interested in this position?",
     "What are your greatest strengths and weaknesses?",
     "Describe a challenging situation you faced at work and how you handled it.",
-    "Where do you see yourself in 5 years?"
+    "Where do you see yourself in 5 years?",
   ];
 
   const onStartRecording = () => {
@@ -66,43 +66,57 @@ function Interview({ user }: InterviewProps) {
     try {
       setLoading(true);
       setError(null);
-      toast({ title: "Uploading", description: "Sending your recording to Supabase…" });
+      toast({
+        title: "Uploading",
+        description: "Sending your recording to Supabase…",
+      });
 
       const formData = new FormData();
-      formData.append('video', blob);
-      formData.append('title', 'Interview Session');
+      formData.append("video", blob);
+      formData.append("title", "Interview Session");
 
-      console.log('Interview page: FormData created with blob size:', blob.size, 'type:', blob.type);
+      console.log(
+        "Interview page: FormData created with blob size:",
+        blob.size,
+        "type:",
+        blob.type
+      );
 
       const isRetake = Boolean(retakeSessionId);
       const endpoint = isRetake
         ? `${API_BASE_URL}/candidate/upload`
         : `${API_BASE_URL}/candidate/session`;
 
-      console.log('Interview page: Uploading to endpoint:', endpoint);
+      console.log("Interview page: Uploading to endpoint:", endpoint);
 
       if (isRetake) {
-        formData.append('sessionId', retakeSessionId!);
+        formData.append("sessionId", retakeSessionId!);
       }
 
-      const token = localStorage.getItem('supabase_token');
+      const token = localStorage.getItem("supabase_token");
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           ...(token && { Authorization: `Bearer ${token}` }),
         },
-        body: formData
+        body: formData,
       });
 
-      console.log('Interview page: Upload response status:', response.status);
-      console.log('Interview page: Upload response headers:', Object.fromEntries(response.headers.entries()));
+      console.log("Interview page: Upload response status:", response.status);
+      console.log(
+        "Interview page: Upload response headers:",
+        Object.fromEntries(response.headers.entries())
+      );
       if (!response.ok) {
         const text = await response.text();
         throw new Error(text || `HTTP ${response.status}`);
       }
       const data = await response.json();
       setSessionData(data);
-      toast({ title: "Upload complete", description: "Your video was saved successfully." });
+      toast({
+        title: "Upload complete",
+        description: "Your video was saved successfully.",
+      });
 
       // Redirect to feedback page after successful upload
       setTimeout(() => {
@@ -112,7 +126,11 @@ function Interview({ user }: InterviewProps) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      toast({ title: "Upload failed", description: msg, variant: "destructive" });
+      toast({
+        title: "Upload failed",
+        description: msg,
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -121,7 +139,7 @@ function Interview({ user }: InterviewProps) {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -137,15 +155,17 @@ function Interview({ user }: InterviewProps) {
                   Back to Dashboard
                 </Button>
               </Link>
-              <h1 className="text-xl font-semibold text-gray-900">Interview Session</h1>
+              <h1 className="text-xl font-semibold text-gray-900">
+                Interview Session
+              </h1>
             </div>
             <div className="flex items-center space-x-3">
-              <Link href="/camera-test">
+              {/* <Link href="/camera-test">
                 <Button variant="outline" size="sm">
                   <Video className="h-4 w-4 mr-2" />
                   Test Camera
                 </Button>
-              </Link>
+              </Link> */}
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                   <span className="text-white text-sm font-semibold">
@@ -173,7 +193,9 @@ function Interview({ user }: InterviewProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Question {currentQuestion + 1} of {questions.length}</span>
+                  <span className="text-sm text-gray-600">
+                    Question {currentQuestion + 1} of {questions.length}
+                  </span>
                   <Badge variant="outline" className="bg-blue-50 text-blue-700">
                     {formatTime(timer)}
                   </Badge>
@@ -187,7 +209,9 @@ function Interview({ user }: InterviewProps) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
+                    onClick={() =>
+                      setCurrentQuestion(Math.max(0, currentQuestion - 1))
+                    }
                     disabled={currentQuestion === 0}
                   >
                     Previous
@@ -195,7 +219,11 @@ function Interview({ user }: InterviewProps) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentQuestion(Math.min(questions.length - 1, currentQuestion + 1))}
+                    onClick={() =>
+                      setCurrentQuestion(
+                        Math.min(questions.length - 1, currentQuestion + 1)
+                      )
+                    }
                     disabled={currentQuestion === questions.length - 1}
                   >
                     Next
@@ -215,8 +243,9 @@ function Interview({ user }: InterviewProps) {
               <CardContent className="space-y-4">
                 <div className="p-4 bg-purple-50 rounded-lg border-l-4 border-purple-500">
                   <p className="text-sm text-gray-700">
-                    <strong>Coming Soon:</strong> AI will analyze your responses in real-time, 
-                    provide instant feedback on communication skills, body language, and answer quality.
+                    <strong>Coming Soon:</strong> AI will analyze your responses
+                    in real-time, provide instant feedback on communication
+                    skills, body language, and answer quality.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-xs text-gray-600">
@@ -240,36 +269,20 @@ function Interview({ user }: InterviewProps) {
               </CardContent>
             </Card>
 
-            {/* Recording Controls */}
-            <Card className="bg-white shadow-lg border-0">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center space-x-2">
-                  <Video className="h-5 w-5 text-red-600" />
-                  <span>Recording Controls</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-center space-x-4">
-                  {!isRecording ? (
-                    <Button
-                      onClick={onStartRecording}
-                      disabled={loading}
-                      className="bg-red-600 hover:bg-red-700 px-8 py-3 rounded-full"
-                      size="lg"
-                    >
-                      <Video className="h-5 w-5 mr-2" />
-                      Start Recording
-                    </Button>
-                  ) : (
-                    // Remove this button to avoid sending empty Blob
-                    // The VideoRecorder component handles stop recording
-                    <></>
-                  )}
+            {/* Recording Instructions */}
+            <Card className="bg-blue-50 border-blue-200">
+              <CardContent className="p-4 text-center">
+                <div className="flex items-center justify-center space-x-2 mb-2">
+                  <Video className="h-5 w-5 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-800">Recording Controls</span>
                 </div>
+                <p className="text-sm text-blue-700">
+                  Use the recording controls in the video area below to start and stop your interview session.
+                </p>
                 {loading && (
-                  <div className="mt-4 text-center">
+                  <div className="mt-4">
                     <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
-                    <p className="text-sm text-gray-600 mt-2">Processing...</p>
+                    <p className="text-sm text-blue-600 mt-2">Processing your recording...</p>
                   </div>
                 )}
               </CardContent>
@@ -301,7 +314,9 @@ function Interview({ user }: InterviewProps) {
                 <CardContent className="p-4">
                   <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                    <span className="text-sm font-medium text-red-800">Error</span>
+                    <span className="text-sm font-medium text-red-800">
+                      Error
+                    </span>
                   </div>
                   <p className="text-sm text-red-600 mt-1">{error}</p>
                 </CardContent>
