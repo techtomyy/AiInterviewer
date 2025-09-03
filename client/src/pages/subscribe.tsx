@@ -1,4 +1,3 @@
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -20,32 +19,14 @@ import {
   Zap
 } from "lucide-react";
 
-export default function Subscribe() {
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+interface SubscribeProps {
+  user: any;
+}
+
+export default function Subscribe({ user }: SubscribeProps) {
   const { toast } = useToast();
 
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
-      return;
-    }
-  }, [isAuthenticated, authLoading, toast]);
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
-      </div>
-    );
-  }
+  // Authentication is handled by withAuth HOC, no need for duplicate logic here
 
   const plans = [
     {

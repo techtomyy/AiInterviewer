@@ -10,7 +10,9 @@ import Recruiter from "@/pages/recruiter";
 import Subscribe from "@/pages/subscribe";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth"; 
+import Contact from "@/pages/contact";
 import CameraTest from "@/components/CameraTest";
+import { withAuth } from "@/components/withAuth";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 
 // React Query
@@ -20,29 +22,35 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 const queryClient = new QueryClient();
 
 function Router() {
-  const { user, loading } = useSupabaseAuth();
+  const { loading } = useSupabaseAuth();
 
   if (loading) return <div>Loading...</div>;
+
+  // Create authenticated versions of components
+  const AuthenticatedDashboard = withAuth(Dashboard);
+  const AuthenticatedInterview = withAuth(Interview);
+  const AuthenticatedFeedback = withAuth(Feedback);
+  const AuthenticatedRecruiter = withAuth(Recruiter);
+  const AuthenticatedSubscribe = withAuth(Subscribe);
 
   return (
     <Switch>
       {/* Public routes */}
       <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
+      <Route path="/contact" component={Contact} />
       <Route path="/camera-test" component={CameraTest} />
 
-      {/* Protected routes (only if logged in) */}
-      {user && (
-        <>
-          <Route path="/home" component={Home} />
-          <Route path="/dashboard" component={Dashboard} />
-          <Route path="/interview" component={Interview} />
-          <Route path="/interview/:id" component={Interview} />
-          <Route path="/feedback/:id" component={Feedback} />
-          <Route path="/recruiter" component={Recruiter} />
-          <Route path="/subscribe" component={Subscribe} />
-        </>
-      )}
+      {/* Public routes that need authentication logic */}
+      <Route path="/home" component={Home} />
+      
+      {/* Protected routes (will redirect to login if not authenticated) */}
+      <Route path="/dashboard" component={AuthenticatedDashboard} />
+      <Route path="/interview" component={AuthenticatedInterview} />
+      <Route path="/interview/:id" component={AuthenticatedInterview} />
+      <Route path="/feedback/:id" component={AuthenticatedFeedback} />
+      <Route path="/recruiter" component={AuthenticatedRecruiter} />
+      <Route path="/subscribe" component={AuthenticatedSubscribe} />
 
       {/* Catch-all */}
       <Route component={NotFound} />

@@ -1,19 +1,22 @@
 // client/src/pages/interview.tsx - Redesigned with AI integration space
 import React, { useEffect, useRef, useState } from "react";
-import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import VideoRecorder from "@/components/VideoRecorder";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Brain, Video, Mic, Clock, Target } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useParams } from "wouter";
 
 const API_ORIGIN = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const API_BASE_URL = `${API_ORIGIN}/api`;
 
-function Interview() {
-  const { user } = useSupabaseAuth();
+interface InterviewProps {
+  user: any;
+}
+
+function Interview({ user }: InterviewProps) {
+  const { id: retakeSessionId } = useParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionData, setSessionData] = useState<any>(null);
@@ -64,12 +67,35 @@ function Interview() {
       setLoading(true);
       setError(null);
       toast({ title: "Uploading", description: "Sending your recording to Supabase…" });
-      const base64 = await blobToBase64(blob);
-      const response = await fetch(`${API_BASE_URL}/upload`, {
+
+      const formData = new FormData();
+      formData.append('video', blob);
+      formData.append('title', 'Interview Session');
+
+      console.log('Interview page: FormData created with blob size:', blob.size, 'type:', blob.type);
+
+      const isRetake = Boolean(retakeSessionId);
+      const endpoint = isRetake
+        ? `${API_BASE_URL}/candidate/upload`
+        : `${API_BASE_URL}/candidate/session`;
+
+      console.log('Interview page: Uploading to endpoint:', endpoint);
+
+      if (isRetake) {
+        formData.append('sessionId', retakeSessionId!);
+      }
+
+      const token = localStorage.getItem('supabase_token');
+      const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file: base64, userId: user?.id || "test-id", email: user?.email || "" })
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: formData
       });
+
+      console.log('Interview page: Upload response status:', response.status);
+      console.log('Interview page: Upload response headers:', Object.fromEntries(response.headers.entries()));
       if (!response.ok) {
         const text = await response.text();
         throw new Error(text || `HTTP ${response.status}`);
@@ -77,10 +103,11 @@ function Interview() {
       const data = await response.json();
       setSessionData(data);
       toast({ title: "Upload complete", description: "Your video was saved successfully." });
-      
+
       // Redirect to feedback page after successful upload
       setTimeout(() => {
-        window.location.href = `/feedback/${data.session.id}`;
+        const sessionId = isRetake ? retakeSessionId : data.session.id;
+        window.location.href = `/feedback/${sessionId}`;
       }, 1500);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -234,15 +261,9 @@ function Interview() {
                       Start Recording
                     </Button>
                   ) : (
-                    <Button
-                      onClick={() => onStopRecording(new Blob())}
-                      disabled={loading}
-                      className="bg-gray-600 hover:bg-gray-700 px-8 py-3 rounded-full"
-                      size="lg"
-                    >
-                      <Video className="h-5 w-5 mr-2" />
-                      Stop Recording
-                    </Button>
+                    // Remove this button to avoid sending empty Blob
+                    // The VideoRecorder component handles stop recording
+                    <></>
                   )}
                 </div>
                 {loading && (

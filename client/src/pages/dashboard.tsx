@@ -1,76 +1,70 @@
-import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import ProgressChart from "@/components/ProgressChart";
 import { Link, useLocation } from "wouter";
-import { supabase } from "@/lib/suppabaseClient";
-import { 
-  PlayCircle, 
-  Calendar, 
-  Clock, 
-  Eye, 
-  Target, 
-  Video, 
+import { supabase } from "@/lib/supabaseClient";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  PlayCircle,
+  Calendar,
+  Clock,
+  Eye,
+  Target,
+  Video,
   RefreshCw,
   TrendingUp,
   CheckCircle,
   AlertCircle,
-  Brain
+  Brain,
+  Trash2
 } from "lucide-react";
 
-export default function Dashboard() {
-  const { user, isAuthenticated, isLoading } = useAuth();
+interface DashboardProps {
+  user: any;
+}
+
+export default function Dashboard({ user }: DashboardProps) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const [openVideoUrl, setOpenVideoUrl] = useState<string | null>(null);
 
-  // 🚀 Logout
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    toast({
-      title: "Logged out",
-      description: "You have been logged out successfully.",
-    });
-    navigate("/auth");
-  }
-
-  // 🔒 Redirect if not authenticated
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      navigate("/auth");
-    }
-  }, [isAuthenticated, isLoading, navigate]);
-
-  // 📊 Fetch sessions using the correct user ID
+  // 📊 Fetch sessions using email fallback, in case local user_id mapping differs
   const { data: sessionsData, isLoading: sessionsLoading, refetch } = useQuery<any[]>({
-    queryKey: ["/api/sessions", user?.id],
-    enabled: !!user?.id,
+    queryKey: ["/api/sessions", user?.id, user?.email],
+    enabled: !!user?.email || !!user?.id,
     retry: false,
     queryFn: async () => {
       try {
-        console.log("Fetching sessions for user:", user?.id);
-        const apiUrl = `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:5000'}/api/candidate/sessions?user_id=${user?.id}`;
-        console.log("API URL:", apiUrl);
-        
-        const res = await fetch(apiUrl);
-        console.log("Response status:", res.status);
-        console.log("Response headers:", res.headers);
-        
+        const base = `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:5000'}`;
+        const apiUrl = `${base}/api/candidate/sessions`;
+        const token = localStorage.getItem('supabase_token');
+
+        const res = await fetch(apiUrl, {
+          headers: {
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+
         if (!res.ok) {
           const errorText = await res.text();
-          console.error("Error response:", errorText);
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
-        
+
         const json = await res.json();
-        console.log("Fetched sessions:", json);
-        return json.sessions || [];
+        return json || [];
       } catch (error) {
-        console.error("Error fetching sessions:", error);
         toast({
           title: "Error fetching sessions",
           description: "Failed to load your interview sessions. Please try again.",
@@ -87,6 +81,70 @@ export default function Dashboard() {
     retry: false,
     queryFn: async () => ({})
   });
+
+  // 🚀 Logout
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    toast({
+      title: "Logged out",
+      description: "You have been logged out successfully.",
+    });
+    navigate("/auth");
+  }
+
+  // 🗑️ Delete session
+  async function handleDeleteSession(sessionId: string) {
+    if (!confirm("Are you sure you want to delete this interview session? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const base = `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:5000'}`;
+      const apiUrl = `${base}/api/candidate/session/${sessionId}`;
+      const token = localStorage.getItem('supabase_token');
+
+      const response = await fetch(apiUrl, {
+        method: 'DELETE',
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      toast({
+        title: "Session deleted",
+        description: "The interview session has been successfully deleted.",
+      });
+
+      // Refresh the sessions list
+      refetch();
+    } catch (error) {
+      toast({
+        title: "Delete failed",
+        description: "Failed to delete the session. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  // 🧪 Test video URL accessibility
+  async function testVideoUrl(url: string) {
+    try {
+      console.log('Testing video URL:', url);
+      const response = await fetch(url, { method: 'HEAD' });
+      console.log('Video URL test response:', response.status, response.headers.get('content-type'));
+      return response.ok;
+    } catch (error) {
+      console.error('Video URL test failed:', error);
+      return false;
+    }
+  }
+
+  // 🔒 Authentication is now handled by withAuth HOC wrapper
+  // No need for duplicate redirect logic here
 
   const sessions = sessionsData ?? []; // ✅ always an array
 
@@ -137,7 +195,7 @@ export default function Dashboard() {
     }
   };
 
-  if (isLoading || sessionsLoading) {
+  if (sessionsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
@@ -165,12 +223,11 @@ export default function Dashboard() {
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
                   <span className="text-white text-sm font-semibold">
-                    {user?.firstName?.[0] ?? ""}
-                    {user?.lastName?.[0] ?? ""}
+                    {user?.email?.[0]?.toUpperCase() ?? "U"}
                   </span>
                 </div>
                 <span className="text-gray-700">
-                  {user?.firstName} {user?.lastName}
+                  {user?.email}
                 </span>
               </div>
               <Link href="/interview">
@@ -198,40 +255,55 @@ export default function Dashboard() {
       {/* 📊 Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* ✅ Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 hover:shadow-lg transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle>Total Sessions</CardTitle>
-              <Calendar className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-blue-900">Total Sessions</CardTitle>
+              <Calendar className="h-5 w-5 text-blue-600" />
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{sessions.length}</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-3xl font-bold text-blue-900">{sessions.length}</p>
+              <p className="text-sm text-blue-700">
                 {thisWeekSessions.length} this week
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200 hover:shadow-lg transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle>Average Score</CardTitle>
-              <Target className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-green-900">Completed</CardTitle>
+              <CheckCircle className="h-5 w-5 text-green-600" />
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{averageScore.toFixed(1)}/10</p>
-              <Progress value={(averageScore / 10) * 100} />
+              <p className="text-3xl font-bold text-green-900">{completedSessions.length}</p>
+              <p className="text-sm text-green-700">
+                interviews done
+              </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 hover:shadow-lg transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle>Completed</CardTitle>
-              <Clock className="h-5 w-5 text-muted-foreground" />
+              <CardTitle className="text-purple-900">Average Score</CardTitle>
+              <Target className="h-5 w-5 text-purple-600" />
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{completedSessions.length}</p>
-              <p className="text-sm text-muted-foreground">
-                sessions completed
+              <p className="text-3xl font-bold text-purple-900">{averageScore.toFixed(1)}/10</p>
+              <Progress value={(averageScore / 10) * 100} className="mt-2" />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 hover:shadow-lg transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-orange-900">In Progress</CardTitle>
+              <Clock className="h-5 w-5 text-orange-600" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-orange-900">
+                {sessions.filter(s => s?.status === 'created' || s?.status === 'processing').length}
+              </p>
+              <p className="text-sm text-orange-700">
+                sessions active
               </p>
             </CardContent>
           </Card>
@@ -243,7 +315,7 @@ export default function Dashboard() {
             <CardTitle>Performance Progress</CardTitle>
           </CardHeader>
           <CardContent>
-            <ProgressChart data={completedSessions} />
+            <ProgressChart sessions={completedSessions} />
           </CardContent>
         </Card>
 
@@ -272,58 +344,184 @@ export default function Dashboard() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {sessions.map((session: any) => (
-                  <Card key={session?.id} className="hover:shadow-lg transition-shadow">
-                    <CardHeader className="pb-3">
+                  <Card
+                    key={session?.id}
+                    className={`group hover:shadow-xl transition-all duration-300 border-0 shadow-md hover:scale-[1.02] bg-gradient-to-br from-white to-gray-50 ${session?.video_url ? 'cursor-pointer' : ''}`}
+                    onClick={() => {
+                      if (session?.video_url) {
+                        console.log('Opening video:', session.video_url);
+                        setOpenVideoUrl(session.video_url);
+                      } else {
+                        console.log('No video URL available for session:', session.id);
+                        toast({
+                          title: "No Video Available",
+                          description: "This session doesn't have a recorded video.",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    <CardHeader className="pb-3 bg-gradient-to-r from-gray-50 to-gray-100 rounded-t-lg">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
                           {getStatusIcon(session?.status)}
-                          <span className="text-sm font-medium text-gray-900">
-                            Interview #{session?.id?.slice(0, 8)}...
+                          <span className="text-sm font-semibold text-gray-800">
+                            Interview #{String(session?.id)?.slice(0, 8)}...
                           </span>
                         </div>
-                        {getStatusBadge(session?.status)}
+                        <div className="flex items-center space-x-2">
+                          {getStatusBadge(session?.status)}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSession(session.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Date:</span>
-                          <span className="text-gray-900">
-                            {session?.created_at 
-                              ? new Date(session.created_at).toLocaleDateString()
-                              : "Unknown"
-                            }
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Time:</span>
-                          <span className="text-gray-900">
-                            {session?.created_at 
-                              ? new Date(session.created_at).toLocaleTimeString()
-                              : "Unknown"
-                            }
-                          </span>
-                        </div>
-                        {session?.video_url && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Video:</span>
-                            <span className="text-green-600 text-xs">✓ Available</span>
+                      {/* Video preview */}
+                      <div className="relative rounded-md overflow-hidden bg-gray-100 aspect-video">
+                        {session?.video_url ? (
+                          <>
+                            <video
+                              src={session.video_url}
+                              className="w-full h-full object-cover"
+                              muted
+                              playsInline
+                              preload="metadata"
+                              onError={(e) => {
+                                console.error('Video preview load error:', e);
+                                console.error('Video URL:', session.video_url);
+                                const videoElement = e.target as HTMLVideoElement;
+                                console.error('Video element error details:', videoElement?.error);
+                                toast({
+                                  title: "Video Preview Error",
+                                  description: "Unable to load video preview. The video may be corrupted or in an unsupported format.",
+                                  variant: "destructive",
+                                });
+                              }}
+                              onLoadedData={() => {
+                                console.log('Video preview loaded successfully for session:', session.id);
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/20" />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+                              <div className="w-12 h-12 rounded-full bg-white/80 backdrop-blur flex items-center justify-center shadow">
+                                <PlayCircle className="h-6 w-6 text-gray-800" />
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <Video className="h-10 w-10 text-gray-400" />
                           </div>
                         )}
                       </div>
-                      
-                      <div className="flex space-x-2 pt-2">
-                        {session?.status === 'uploaded' && (
-                          <Link href={`/feedback/${session.id}`}>
-                            <Button variant="outline" size="sm" className="flex-1">
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </Button>
-                          </Link>
+
+                      <div className="space-y-3 text-sm">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <span className="text-gray-500 text-xs block">Date</span>
+                            <span className="text-gray-900 font-medium">
+                              {session?.created_at
+                                ? new Date(session.created_at).toLocaleDateString()
+                                : "Unknown"}
+                            </span>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <span className="text-gray-500 text-xs block">Time</span>
+                            <span className="text-gray-900 font-medium">
+                              {session?.created_at
+                                ? new Date(session.created_at).toLocaleTimeString()
+                                : "Unknown"}
+                            </span>
+                          </div>
+                        </div>
+                        {session?.video_url && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+                            <div className="flex items-center justify-center space-x-2">
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                              <span className="text-green-700 text-sm font-medium">Video Available</span>
+                            </div>
+                          </div>
                         )}
-                        <Link href="/interview">
-                          <Button variant="outline" size="sm" className="flex-1">
-                            <PlayCircle className="h-4 w-4 mr-1" />
+                      </div>
+
+                      <div className="flex space-x-2 pt-3">
+                        {session?.status === 'uploaded' && (
+                          <div className="flex space-x-2 flex-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-300"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (session?.video_url) {
+                                  console.log('Watch Video button clicked, URL:', session.video_url);
+                                  setOpenVideoUrl(session.video_url);
+                                } else {
+                                  console.log('Watch Video button clicked but no URL available');
+                                  toast({ title: "No video available", variant: "destructive" });
+                                }
+                              }}
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              Watch Video
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (session?.video_url) {
+                                  try {
+                                    console.log('Testing video URL accessibility:', session.video_url);
+                                    const response = await fetch(session.video_url, { method: 'HEAD' });
+                                    console.log('Video URL test result:', response.status, response.headers.get('content-type'));
+                                    if (response.ok) {
+                                      toast({
+                                        title: "Video URL Accessible",
+                                        description: `Status: ${response.status}, Content-Type: ${response.headers.get('content-type')}`,
+                                      });
+                                    } else {
+                                      toast({
+                                        title: "Video URL Not Accessible",
+                                        description: `Status: ${response.status}`,
+                                        variant: "destructive",
+                                      });
+                                    }
+                                  } catch (error) {
+                                    console.error('Video URL test failed:', error);
+                                    toast({
+                                      title: "Video URL Test Failed",
+                                      description: "Could not access the video URL",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                }
+                              }}
+                              title="Test video URL accessibility"
+                            >
+                              <RefreshCw className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                        <Link href={`/interview/${session.id}`}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <PlayCircle className="h-4 w-4 mr-2" />
                             Retake
                           </Button>
                         </Link>
@@ -374,6 +572,59 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </main>
+
+      {/* Video Watch Dialog */}
+      <Dialog open={!!openVideoUrl} onOpenChange={(o) => !o && setOpenVideoUrl(null)}>
+        <DialogContent className="max-w-4xl bg-gradient-to-br from-gray-50 to-gray-100">
+          <DialogHeader className="bg-white rounded-lg p-4 shadow-sm">
+            <DialogTitle className="flex items-center space-x-2 text-lg font-semibold text-gray-800">
+              <Video className="h-5 w-5 text-blue-600" />
+              <span>Interview Video Playback</span>
+            </DialogTitle>
+          </DialogHeader>
+          {openVideoUrl ? (
+            <div className="bg-white rounded-lg p-4 shadow-sm">
+              <video
+                src={openVideoUrl}
+                controls
+                className="w-full rounded-lg shadow-lg"
+                preload="metadata"
+                onError={(e) => {
+                  console.error('Video dialog load error:', e);
+                  console.error('Video URL:', openVideoUrl);
+                  const videoElement = e.target as HTMLVideoElement;
+                  console.error('Video element error details:', videoElement?.error);
+                  toast({
+                    title: "Video Playback Error",
+                    description: "Unable to load video. The video file may be corrupted or inaccessible.",
+                    variant: "destructive",
+                  });
+                }}
+                onLoadedData={(e) => {
+                  console.log('Video loaded successfully in dialog');
+                  console.log('Video URL:', openVideoUrl);
+                  const videoElement = e.target as HTMLVideoElement;
+                  console.log('Video duration:', videoElement?.duration);
+                }}
+                onLoadStart={() => {
+                  console.log('Video load started for URL:', openVideoUrl);
+                }}
+              />
+              <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                <span>Recorded interview session</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOpenVideoUrl(null)}
+                  className="bg-gray-50 hover:bg-gray-100"
+                >
+                  Close Player
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

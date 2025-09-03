@@ -1,4 +1,3 @@
-import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -26,28 +25,20 @@ import {
   Star
 } from "lucide-react";
 
-export default function Recruiter() {
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+interface RecruiterProps {
+  user: any;
+}
+
+export default function Recruiter({ user }: RecruiterProps) {
   const { toast } = useToast();
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddCandidate, setShowAddCandidate] = useState(false);
 
-  // Redirect if not authenticated or not a recruiter
+  // Authentication is handled by withAuth HOC
+  // Check if user is a recruiter
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
-      return;
-    }
-
-    if (!authLoading && user && user.role !== 'recruiter') {
+    if (user && user.role !== 'recruiter') {
       toast({
         title: "Access Denied",
         description: "This page is only accessible to recruiters.",
@@ -55,7 +46,7 @@ export default function Recruiter() {
       });
       return;
     }
-  }, [isAuthenticated, authLoading, user, toast]);
+  }, [user, toast]);
 
   const { data: evaluations = [], isLoading: evaluationsLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/recruiter/evaluations"],
@@ -96,7 +87,7 @@ export default function Recruiter() {
     },
   });
 
-  if (authLoading || evaluationsLoading) {
+  if (evaluationsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />

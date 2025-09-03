@@ -14,6 +14,11 @@ export default function AuthCallback() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
+        // Store the access token for API calls
+        const token = data.session.access_token;
+        if (token) {
+          localStorage.setItem('supabase_token', token);
+        }
         navigate("/dashboard"); // ✅ redirect after login
       } else {
         navigate("/auth");

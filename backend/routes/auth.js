@@ -1,67 +1,65 @@
-/*
- * Copyright (c) - All Rights Reserved.
- * 
- * See the LICENSE file for more information.
- */
-
-import express from "express";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-import { supabase } from "../supabaseClient.js";  // ✅ use centralized client
+const express = require('express');
+const { supabase } = require('../config/supabase');
+const { supabaseAdmin } = require('../config/supabaseAdmin');
 
 const router = express.Router();
 
-// Signup
-router.post("/signup", async (req, res) => {
+// ------------------- Signup -------------------
+router.post('/signup', async (req, res) => {
+  const { email, password, role = 'candidate' } = req.body;
   try {
-    const { email, password, role } = req.body;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    if (error) throw error;
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Insert user role into users table
+    const { error: insertError } = await supabaseAdmin
+      .from('users')
+      .insert([{ id: data.user.id, email, role }]);
+    if (insertError) throw insertError;
 
-    const { data, error } = await supabase
-      .from("users")
-      .insert([{ email, password: hashedPassword, role }])
-      .select();
-
-    if (error) return res.status(400).json({ error: error.message });
-
-    res.json({ message: "User created", user: data[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(201).json({ message: 'User created', user: data.user });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Login
-router.post("/login", async (req, res) => {
+// ------------------- Login -------------------
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
   try {
-    const { email, password } = req.body;
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
 
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", email)
-      .single();
-
-    if (error || !user) return res.status(400).json({ error: "User not found" });
-
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(401).json({ error: "Invalid password" });
-
-    const token = jwt.sign(
-      { id: user.id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
-
-    res.json({ message: "Login successful", token });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.json({ message: 'Logged in', user: data.user, session: data.session });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Logout (client deletes token itself)
-router.post("/logout", (req, res) => {
-  res.json({ message: "Logged out" });
+// ------------------- Logout -------------------
+// This logout route expects a refresh_token in the request body
+router.post('/logout', async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+
+    if (!refresh_token) {
+      return res.status(400).json({ error: 'Refresh token is required' });
+    }
+
+    // Log out using Supabase with the refresh token
+    const { error } = await supabase.auth.signOut({ refresh_token });
+    if (error) throw error;
+
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
-export default router;
+module.exports = router;

@@ -1,9 +1,10 @@
-import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link, useLocation } from "wouter";
 import { supabase } from "@/lib/suppabaseClient";
+import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { useEffect, useState } from "react";
 import { 
   Video, 
   TrendingUp, 
@@ -15,16 +16,95 @@ import {
   LogIn,
   UserPlus,
   ArrowRight,
-  LogOut
+  LogOut,
+  User
 } from "lucide-react";
 
 export default function Home() {
-  const { user, isLoading, isAuthenticated } = useAuth();
+  const { user, loading } = useSupabaseAuth();
   const [, navigate] = useLocation();
+  const [localUser, setLocalUser] = useState<any>(null);
+  const [localLoading, setLocalLoading] = useState(true);
+  
+  // Debug logging
+  console.log("Home component - Auth state:", { user, loading, userId: user?.id, userEmail: user?.email });
+  console.log("Local auth state:", { localUser, localLoading });
+  
+  // Force refresh authentication state with local state
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        setLocalLoading(true);
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log("Current session:", session);
+        console.log("Session error:", error);
+        
+        if (session?.user) {
+          console.log("User is authenticated:", session.user);
+          console.log("User ID:", session.user.id);
+          console.log("User email:", session.user.email);
+          setLocalUser(session.user);
+        } else {
+          console.log("No active session found");
+          setLocalUser(null);
+        }
+        
+        // Also check if there are any stored tokens
+        const accessToken = localStorage.getItem('sb-access-token');
+        const refreshToken = localStorage.getItem('sb-refresh-token');
+        console.log("Stored tokens:", { accessToken: !!accessToken, refreshToken: !!refreshToken });
+        
+        // Check all localStorage keys that might contain auth data
+        const allKeys = Object.keys(localStorage);
+        const authKeys = allKeys.filter(key => key.includes('supabase') || key.includes('auth') || key.includes('sb-'));
+        console.log("All auth-related localStorage keys:", authKeys);
+        
+        setLocalLoading(false);
+      } catch (error) {
+        console.error("Error checking auth:", error);
+        setLocalLoading(false);
+      }
+    };
+    
+    checkAuth();
+  }, []);
+
+  // Manual refresh function for debugging
+  const refreshAuth = async () => {
+    console.log("Manual auth refresh triggered");
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      console.log("Refreshed session:", session);
+      console.log("Session error:", error);
+      
+      if (session?.user) {
+        console.log("User is authenticated after refresh:", session.user);
+        setLocalUser(session.user);
+        setLocalLoading(false);
+      } else {
+        console.log("Still no active session");
+        setLocalUser(null);
+        setLocalLoading(false);
+      }
+    } catch (error) {
+      console.error("Error refreshing auth:", error);
+      setLocalUser(null);
+      setLocalLoading(false);
+    }
+  };
+  
+  // Show loading while checking authentication
+  if (localLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
   
   const { data: sessions = [] } = useQuery<any[]>({
     queryKey: ["/api/sessions"],
-    enabled: !!user,
+    enabled: !!localUser,
   });
 
   const { data: stats = {} } = useQuery<any>({
@@ -34,36 +114,54 @@ export default function Home() {
 
   // Handle logout
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
+    console.log("Logout clicked - User before logout:", localUser);
+    try {
+      await supabase.auth.signOut();
+      console.log("Logout successful, redirecting to /home");
+      setLocalUser(null); // Clear local state
+      navigate("/home");
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Even if logout fails, redirect to home
+      setLocalUser(null); // Clear local state
+      navigate("/home");
+    }
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
-      </div>
-    );
-  }
+  // Loading is now handled in the component itself
 
   const handleGetStarted = () => {
-    if (isAuthenticated) {
+    console.log("Get Started clicked - User:", localUser);
+    if (localUser && localUser.id) {
+      console.log("User is authenticated, redirecting to dashboard");
       navigate("/dashboard");
     } else {
+      console.log("User is not authenticated, redirecting to auth");
       navigate("/auth");
     }
   };
 
   const handleStartFreeTrial = () => {
-    if (isAuthenticated) {
+    console.log("Start Free Trial clicked - User:", localUser);
+    if (localUser && localUser.id) {
+      console.log("User is authenticated, redirecting to dashboard");
       navigate("/dashboard");
     } else {
+      console.log("User is not authenticated, redirecting to auth");
       navigate("/auth");
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+      {/* Debug Status Bar - Remove this in production */}
+      <div className="bg-yellow-100 p-2 text-center text-sm">
+        🔍 Debug: Hook User ID: {user?.id || 'None'} | Local User ID: {localUser?.id || 'None'} | Loading: {localLoading.toString()}
+        <Button variant="outline" size="sm" onClick={refreshAuth} className="ml-2">
+          🔄 Refresh Auth
+        </Button>
+      </div>
+      
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-sm shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -74,34 +172,29 @@ export default function Home() {
               </h1>
             </div>
             <div className="flex items-center space-x-4">
-              {!isAuthenticated ? (
+              {localUser && localUser.id ? (
                 <>
+                  {/* Replace Sign In button with Logout button */}
+                  <Button variant="ghost" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {/* Show Sign In button when not authenticated */}
                   <Link href="/auth">
                     <Button variant="ghost">
                       <LogIn className="h-4 w-4 mr-2" />
                       Sign In
                     </Button>
                   </Link>
-                  <Link href="/auth">
-                    <Button className="bg-primary hover:bg-blue-800">
-                      <UserPlus className="h-4 w-4 mr-2" />
-                      Sign Up
-                    </Button>
-                  </Link>
-                </>
-              ) : (
-                <div className="flex items-center space-x-4">
-                  <span className="text-gray-600">Welcome, {user?.firstName || user?.email}!</span>
-                  <Link href="/dashboard">
-                    <Button className="bg-primary hover:bg-blue-800">
-                      Dashboard
-                    </Button>
-                  </Link>
-                  <Button variant="outline" onClick={handleLogout}>
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Logout
+                  
+                  {/* Debug button - only show when not authenticated */}
+                  <Button variant="outline" size="sm" onClick={refreshAuth}>
+                    🔄 Refresh Auth
                   </Button>
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -124,8 +217,17 @@ export default function Home() {
               className="bg-primary hover:bg-blue-800 px-8 py-4 text-lg"
               size="lg"
             >
-              {isAuthenticated ? "Go to Dashboard" : "Get Started"}
-              <ArrowRight className="h-5 w-5 ml-2" />
+              {localUser && localUser.id ? (
+                <>
+                  <User className="h-5 w-5 mr-2" />
+                  Profile
+                </>
+              ) : (
+                <>
+                  Get Started
+                  <ArrowRight className="h-5 w-5 ml-2" />
+                </>
+              )}
             </Button>
             <Button 
               onClick={handleStartFreeTrial}
@@ -133,7 +235,17 @@ export default function Home() {
               className="px-8 py-4 text-lg border-2"
               size="lg"
             >
-              {isAuthenticated ? "Start New Interview" : "Start Free Trial"}
+              {localUser && localUser.id ? (
+                <>
+                  <PlayCircle className="h-5 w-5 mr-2" />
+                  Start New Interview
+                </>
+              ) : (
+                <>
+                  <PlayCircle className="h-5 w-5 mr-2" />
+                  Start Free Trial
+                </>
+              )}
             </Button>
           </div>
         </div>
@@ -239,8 +351,17 @@ export default function Home() {
             className="bg-white text-blue-600 hover:bg-gray-100 px-8 py-4 text-lg"
             size="lg"
           >
-            {isAuthenticated ? "Go to Dashboard" : "Start Your Journey Today"}
-            <ArrowRight className="h-5 w-5 ml-2" />
+            {localUser && localUser.id ? (
+              <>
+                <User className="h-5 w-5 mr-2" />
+                View Profile
+              </>
+            ) : (
+              <>
+                Start Your Journey Today
+                <ArrowRight className="h-5 w-5 ml-2" />
+              </>
+            )}
           </Button>
         </div>
       </div>

@@ -12,16 +12,68 @@ import {
   Play,
   Star,
   Eye,
-  BarChart3
+  BarChart3,
+  LogIn,
+  LogOut
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/suppabaseClient";
 
 export default function Landing() {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (session?.user) {
+          setUser(session.user);
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error("Error checking auth:", error);
+        setUser(null);
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   const handleGetStarted = () => {
-    window.location.href = "/auth"; // Redirect to login endpoint by default /api/login
+    window.location.href = "/auth";
   };
 
   const handleSignIn = () => {
-    window.location.href = "/auth"; // Redirect to login endpoint by default /api/login
+    window.location.href = "/auth";
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
+  const handleDashboard = () => {
+    if (user) {
+      window.location.href = "/dashboard";
+    } else {
+      window.location.href = "/auth";
+    }
   };
 
   return (
@@ -40,21 +92,46 @@ export default function Landing() {
               <a href="#features" className="text-gray-600 hover:text-primary transition-colors duration-300">Features</a>
               <a href="#pricing" className="text-gray-600 hover:text-primary transition-colors duration-300">Pricing</a>
               <a href="#contact" className="text-gray-600 hover:text-primary transition-colors duration-300">Contact</a>
-              <Button 
-                variant="ghost" 
-                onClick={handleSignIn}
-                className="text-primary hover:text-blue-800 transition-colors duration-300 font-medium"
-                data-testid="button-signin"
-              >
-                Sign In
-              </Button>
-              <Button 
-                onClick={handleGetStarted}
-                className="bg-primary hover:bg-blue-800 text-white font-medium"
-                data-testid="button-getstarted"
-              >
-                Get Started
-              </Button>
+              
+              {user ? (
+                <>
+                  <Button 
+                    variant="ghost" 
+                    onClick={handleDashboard}
+                    className="text-primary hover:text-blue-800 transition-colors duration-300 font-medium"
+                  >
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    Dashboard
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    onClick={handleLogout}
+                    className="text-primary hover:text-blue-800 transition-colors duration-300 font-medium"
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button 
+                    variant="ghost" 
+                    onClick={handleSignIn}
+                    className="text-primary hover:text-blue-800 transition-colors duration-300 font-medium"
+                    data-testid="button-signin"
+                  >
+                    <LogIn className="h-4 w-4 mr-2" />
+                    Sign In
+                  </Button>
+                  <Button 
+                    onClick={handleGetStarted}
+                    className="bg-primary hover:bg-blue-800 text-white font-medium"
+                    data-testid="button-getstarted"
+                  >
+                    Get Started
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -77,7 +154,7 @@ export default function Landing() {
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button 
                   size="lg"
-                  onClick={handleGetStarted}
+                  onClick={handleDashboard}
                   className="bg-primary hover:bg-blue-800 text-white px-8 py-4 text-lg font-semibold"
                   data-testid="button-start-trial"
                 >
@@ -296,7 +373,7 @@ export default function Landing() {
                 <Button 
                   variant="outline" 
                   className="w-full border-2 border-primary text-primary hover:bg-primary hover:text-white"
-                  onClick={handleGetStarted}
+                  onClick={handleDashboard}
                   data-testid="button-free-plan"
                 >
                   Get Started Free
@@ -343,7 +420,7 @@ export default function Landing() {
                 </ul>
                 <Button 
                   className="w-full bg-primary hover:bg-blue-800 text-white"
-                  onClick={handleGetStarted}
+                  onClick={handleDashboard}
                   data-testid="button-pro-plan"
                 >
                   Start Pro Trial

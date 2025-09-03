@@ -69,6 +69,11 @@ export default function AuthPage() {
           variant: "destructive",
         });
       } else {
+        // Store the access token for API calls
+        const token = data.session?.access_token;
+        if (token) {
+          localStorage.setItem('supabase_token', token);
+        }
         toast({
           title: "Welcome Back! 👋",
           description: "Successfully logged in. Redirecting to dashboard...",

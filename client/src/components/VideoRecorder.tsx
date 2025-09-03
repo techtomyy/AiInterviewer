@@ -14,22 +14,28 @@ import {
   Volume2,
   Eye,
   Settings,
-  RefreshCw
+  RefreshCw,
+  Upload,
+  CheckCircle,
+  XCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabaseClient";
 
 interface VideoRecorderProps {
   isRecording: boolean;
   onStartRecording: () => void;
   onStopRecording: (blob: Blob) => void;
   timer: number;
+  sessionId?: string; // optional session ID for retake upload
 }
 
 export default function VideoRecorder({
   isRecording,
   onStartRecording,
   onStopRecording,
-  timer
+  timer,
+  sessionId
 }: VideoRecorderProps) {
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
@@ -40,6 +46,9 @@ export default function VideoRecorder({
   const [volumeLevel, setVolumeLevel] = useState(0);
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -72,10 +81,8 @@ export default function VideoRecorder({
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
       setAvailableDevices(videoDevices);
-      console.log('Available video devices:', videoDevices);
       return videoDevices;
     } catch (error) {
-      console.error('Error enumerating devices:', error);
       return [];
     }
   };
@@ -87,28 +94,27 @@ export default function VideoRecorder({
       const videoDevices = await enumerateDevices();
       
       // Try to find DroidCam device first
-      const droidCamDevice = videoDevices.find(device => 
-        device.label.toLowerCase().includes('droidcam') || 
+      const droidCamDevice = videoDevices.find(device =>
+        device.label.toLowerCase().includes('droidcam') ||
         device.label.toLowerCase().includes('virtual') ||
         device.label.toLowerCase().includes('webcam') ||
         device.label.toLowerCase().includes('android') ||
-        device.label.toLowerCase().includes('phone')
+        device.label.toLowerCase().includes('phone') ||
+        device.label.toLowerCase().includes('ip camera') ||
+        device.label.toLowerCase().includes('network')
       );
 
-      console.log('Found DroidCam device:', droidCamDevice);
-      console.log('All video devices:', videoDevices);
-
       let stream;
-      
+
       if (droidCamDevice) {
-        // Try to use DroidCam device specifically
+        // Try to use DroidCam device specifically with relaxed constraints
         try {
-          console.log('Attempting to connect to DroidCam device:', droidCamDevice.deviceId);
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
               deviceId: { exact: droidCamDevice.deviceId },
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
+              width: { ideal: 1280, min: 640 },
+              height: { ideal: 720, min: 480 },
+              frameRate: { ideal: 30, min: 15 }
             },
             audio: {
               echoCancellation: true,
@@ -116,10 +122,33 @@ export default function VideoRecorder({
               sampleRate: 44100
             }
           });
-          console.log('Successfully connected to DroidCam device:', droidCamDevice.label);
         } catch (droidCamError) {
-          console.log('DroidCam specific access failed, trying fallback:', droidCamError);
-          // Fallback to default constraints
+          console.log('DroidCam specific constraints failed, trying relaxed constraints:', droidCamError);
+          // Fallback to relaxed constraints for DroidCam
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                deviceId: { exact: droidCamDevice.deviceId },
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+              },
+              audio: {
+                echoCancellation: false,
+                noiseSuppression: false
+              }
+            });
+          } catch (relaxedError) {
+            console.log('Relaxed DroidCam constraints failed, trying any video:', relaxedError);
+            // Last resort - try any video device
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: true
+            });
+          }
+        }
+      } else {
+        // No DroidCam device found, use default constraints
+        try {
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
               width: { ideal: 1280 },
@@ -131,26 +160,15 @@ export default function VideoRecorder({
               sampleRate: 44100
             }
           });
+        } catch (defaultError) {
+          console.log('Default constraints failed, trying basic video:', defaultError);
+          // Fallback to basic constraints
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true
+          });
         }
-      } else {
-        // No DroidCam device found, use default constraints
-        console.log('No DroidCam device found, using default constraints');
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100
-          }
-        });
       }
-
-      console.log('Media stream obtained:', stream);
-      console.log('Video tracks:', stream.getVideoTracks());
-      console.log('Audio tracks:', stream.getAudioTracks());
 
       setMediaStream(stream);
       
@@ -249,8 +267,34 @@ export default function VideoRecorder({
     }
 
     try {
+      // Try different MIME types for better compatibility
+      // Prioritize formats that are widely supported for both recording and playback
+      let mimeType = 'video/webm;codecs=vp8,opus'; // VP8 is more widely supported than VP9
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp9,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            // Last resort - try basic video without specific codecs
+            mimeType = 'video/webm';
+          }
+        }
+      }
+
+      console.log('Using MIME type:', mimeType);
+      console.log('Available MIME types:');
+      const supportedTypes = [
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=vp9,opus',
+        'video/webm',
+        'video/mp4'
+      ];
+      supportedTypes.forEach(type => {
+        console.log(`${type}: ${MediaRecorder.isTypeSupported(type)}`);
+      });
+
       const recorder = new MediaRecorder(mediaStream, {
-        mimeType: 'video/webm;codecs=vp9,opus'
+        mimeType: mimeType
       });
 
       const chunks: Blob[] = [];
@@ -261,11 +305,56 @@ export default function VideoRecorder({
         }
       };
 
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        onStopRecording(blob);
-        setHasRecorded(true);
-        setRecordedChunks([]);
+      recorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: mimeType });
+        console.log('Recording stopped, blob size:', blob.size, 'bytes, type:', blob.type);
+
+        // Validate blob before proceeding
+        if (blob.size === 0) {
+          console.error('Error: Recorded blob is empty');
+          toast({
+            title: "Recording Error",
+            description: "The recorded video appears to be empty. Please try recording again.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Check if blob type matches expected MIME type
+        if (blob.type !== mimeType && blob.type !== 'video/webm') {
+          console.warn('Blob type mismatch:', blob.type, 'expected:', mimeType);
+        }
+
+        // Try to validate the video by creating a temporary video element
+        try {
+          const testVideo = document.createElement('video');
+          const testUrl = URL.createObjectURL(blob);
+          testVideo.src = testUrl;
+
+          await new Promise((resolve, reject) => {
+            testVideo.onloadedmetadata = () => {
+              console.log('Video validation successful - duration:', testVideo.duration, 'dimensions:', testVideo.videoWidth, 'x', testVideo.videoHeight);
+              URL.revokeObjectURL(testUrl);
+              resolve(true);
+            };
+            testVideo.onerror = (e) => {
+              console.error('Video validation failed:', e);
+              URL.revokeObjectURL(testUrl);
+              reject(new Error('Video validation failed'));
+            };
+            testVideo.load();
+          });
+        } catch (validationError) {
+          console.error('Video validation error:', validationError);
+          toast({
+            title: "Video Validation Error",
+            description: "The recorded video appears to be corrupted. Please try recording again.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        handleStopRecording(blob);
       };
 
       recorder.start(1000); // Collect data every second
@@ -297,6 +386,117 @@ export default function VideoRecorder({
         description: "Your answer has been recorded successfully.",
       });
     }
+  };
+
+  const uploadVideo = async (blob: Blob) => {
+    setIsUploading(true);
+    setUploadStatus('idle');
+    
+    try {
+      // Get current user session
+      const { data: { session } } = await supabase.auth.getSession();
+      const userEmail = session?.user?.email;
+      
+      if (!userEmail) {
+        throw new Error("User not authenticated");
+      }
+
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      
+      return new Promise<string>((resolve, reject) => {
+        reader.onload = async () => {
+          try {
+            const base64Data = reader.result as string;
+            const base64Content = base64Data.split(',')[1]; // Remove data:video/webm;base64, prefix
+            
+            // Determine API endpoint based on sessionId prop
+            const base = `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:5000'}`;
+            const apiUrl = sessionId ? `${base}/api/candidate/upload` : `${base}/api/candidate/session`;
+            console.log(`Attempting to upload video to ${apiUrl}`);
+
+            const formData = new FormData();
+            formData.append('video', blob);
+            formData.append('title', 'Interview Session');
+            if (sessionId) {
+              formData.append('sessionId', sessionId);
+            }
+
+            console.log('FormData created with blob size:', blob.size, 'type:', blob.type);
+            console.log('Uploading to:', apiUrl);
+
+            const token = localStorage.getItem('supabase_token');
+            const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: {
+                ...(token && { Authorization: `Bearer ${token}` }),
+              },
+              body: formData,
+            });
+
+            console.log('Upload response status:', response.status);
+            console.log('Upload response headers:', Object.fromEntries(response.headers.entries()));
+
+            if (!response.ok) {
+              // Read the response body only once
+              let errorMessage = 'Upload failed';
+              try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorData.message || 'Upload failed';
+                console.error("Upload error response:", errorData);
+              } catch (parseError) {
+                console.error("Failed to parse error response:", parseError);
+                errorMessage = `Upload failed with status ${response.status}`;
+              }
+              throw new Error(errorMessage);
+            }
+
+            const result = await response.json();
+            console.log("Upload successful result:", result);
+            setUploadedVideoUrl(result.url);
+            setUploadStatus('success');
+            
+            toast({
+              title: "Video Uploaded",
+              description: "Your video has been successfully saved to the cloud.",
+              variant: "default",
+            });
+            
+            resolve(result.url);
+          } catch (error) {
+            console.error('Upload error:', error);
+            setUploadStatus('error');
+            
+            toast({
+              title: "Upload Failed",
+              description: error instanceof Error ? error.message : "Failed to upload video. Please try again.",
+              variant: "destructive",
+            });
+            
+            reject(error);
+          } finally {
+            setIsUploading(false);
+          }
+        };
+
+        reader.onerror = () => {
+          setIsUploading(false);
+          setUploadStatus('error');
+          reject(new Error("Failed to read video file"));
+        };
+      });
+    } catch (error) {
+      setIsUploading(false);
+      setUploadStatus('error');
+      throw error;
+    }
+  };
+
+  const handleStopRecording = async (blob: Blob) => {
+    onStopRecording(blob);
+    setHasRecorded(true);
+    setRecordedChunks([]);
   };
 
   const toggleVideo = () => {
@@ -351,7 +551,6 @@ export default function VideoRecorder({
             <video
               ref={videoRef}
               autoPlay
-              muted
               playsInline
               className="w-full h-full object-cover"
               data-testid="video-preview"
@@ -579,10 +778,41 @@ export default function VideoRecorder({
           <CardContent className="p-4 text-center">
             <div className="flex items-center justify-center space-x-2 mb-2">
               <Badge className="bg-green-600 text-white">Recording Complete</Badge>
+              {isUploading && (
+                <div className="flex items-center space-x-2 ml-2">
+                  <div className="animate-spin w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full"></div>
+                  <span className="text-sm text-green-700">Uploading...</span>
+                </div>
+              )}
+              {uploadStatus === 'success' && (
+                <div className="flex items-center space-x-2 ml-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="text-sm text-green-700">Uploaded</span>
+                </div>
+              )}
+              {uploadStatus === 'error' && (
+                <div className="flex items-center space-x-2 ml-2">
+                  <XCircle className="h-4 w-4 text-red-600" />
+                  <span className="text-sm text-red-700">Upload Failed</span>
+                </div>
+              )}
             </div>
-            <p className="text-sm text-green-700">
-              Your answer has been recorded. You can retake it or proceed to the next question.
+            <p className="text-sm text-green-700 mb-2">
+              Your answer has been recorded. {uploadStatus === 'success' && 'Video saved to cloud storage.'}
             </p>
+            {uploadedVideoUrl && (
+              <div className="mt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(uploadedVideoUrl, '_blank')}
+                  className="text-xs"
+                >
+                  <Upload className="h-3 w-3 mr-1" />
+                  View Uploaded Video
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

@@ -52,15 +52,18 @@ class ApiService {
   }
 
   // Interview session endpoints
-  async createInterviewSession(sessionData: {
-    candidateId: string;
-    position?: string;
-    questions?: string[];
-  }) {
+  async createInterviewSession(videoFile: File, title: string = 'Interview Session') {
+    const formData = new FormData();
+    formData.append('video', videoFile);
+    formData.append('title', title);
+
+    const token = localStorage.getItem('supabase_token') || sessionStorage.getItem('supabase_token');
     const response = await fetch(`${API_BASE_URL}/candidate/session`, {
       method: 'POST',
-      headers: this.getAuthHeaders(),
-      body: JSON.stringify(sessionData),
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: formData,
     });
     return this.handleResponse(response);
   }
@@ -73,19 +76,18 @@ class ApiService {
     return this.handleResponse(response);
   }
 
-  // Video upload endpoint
-  async uploadInterviewVideo(sessionId: string, videoFile: File) {
-    const formData = new FormData();
-    formData.append('video', videoFile);
-    formData.append('sessionId', sessionId);
+  async getUserSessions() {
+    const response = await fetch(`${API_BASE_URL}/candidate/sessions`, {
+      method: 'GET',
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
 
-    const token = localStorage.getItem('supabase_token') || sessionStorage.getItem('supabase_token');
-    const response = await fetch(`${API_BASE_URL}/upload`, {
-      method: 'POST',
-      headers: {
-        ...(token && { Authorization: `Bearer ${token}` }),
-      },
-      body: formData,
+  async deleteSession(sessionId: string) {
+    const response = await fetch(`${API_BASE_URL}/candidate/session/${sessionId}`, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders(),
     });
     return this.handleResponse(response);
   }
