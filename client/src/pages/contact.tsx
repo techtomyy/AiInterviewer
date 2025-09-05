@@ -17,7 +17,7 @@ import {
   LogOut
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/suppabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -391,12 +392,23 @@ export default function VideoRecorder({
   const uploadVideo = async (blob: Blob) => {
     setIsUploading(true);
     setUploadStatus('idle');
-    
+
+    const [, navigate] = useLocation();
+
     try {
       // Get current user session
-      const { data: { session } } = await supabase.auth.getSession();
-      const userEmail = session?.user?.email;
-      
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        // User session is invalid, redirect to auth
+        localStorage.removeItem('supabase_token');
+        // Use React Router navigation instead of window.location
+        navigate('/auth');
+        throw new Error("Session expired. Please sign in again.");
+      }
+
+      const userEmail = session.user?.email;
+
       if (!userEmail) {
         throw new Error("User not authenticated");
       }
@@ -417,23 +429,32 @@ export default function VideoRecorder({
             console.log(`Attempting to upload video to ${apiUrl}`);
 
             const formData = new FormData();
-            formData.append('video', blob);
+            formData.append('video', blob, `interview_${Date.now()}.webm`);
             formData.append('title', 'Interview Session');
             if (sessionId) {
               formData.append('sessionId', sessionId);
             }
 
             console.log('FormData created with blob size:', blob.size, 'type:', blob.type);
+            console.log('Blob MIME type:', blob.type);
             console.log('Uploading to:', apiUrl);
 
-            const token = localStorage.getItem('supabase_token');
-            const response = await fetch(apiUrl, {
-              method: 'POST',
-              headers: {
-                ...(token && { Authorization: `Bearer ${token}` }),
-              },
-              body: formData,
+            // Log blob details for debugging
+            console.log('Blob details:', {
+              size: blob.size,
+              type: blob.type,
+              lastModified: blob instanceof File ? blob.lastModified : 'N/A'
             });
+
+      const token = localStorage.getItem('supabase_token');
+      console.log('Token from localStorage:', token);
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      });
 
             console.log('Upload response status:', response.status);
             console.log('Upload response headers:', Object.fromEntries(response.headers.entries()));

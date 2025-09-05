@@ -57,12 +57,20 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
 
     console.log('User ID:', userId);
     console.log('File received:', file ? file.originalname : 'No file');
+    console.log('File details:', {
+      originalname: file?.originalname,
+      mimetype: file?.mimetype,
+      size: file?.size,
+      encoding: file?.encoding
+    });
 
     if (!file) return res.status(400).json({ error: 'No video file provided' });
 
     // Upload to Supabase Storage
     const fileName = `${userId}/${Date.now()}_${file.originalname}`;
     console.log('Uploading to storage:', fileName);
+    console.log('File buffer size:', file.buffer.length);
+    console.log('Content type being set:', file.mimetype);
 
     const { error: uploadError } = await supabaseAdmin.storage
       .from('interview-videos')
@@ -203,6 +211,39 @@ router.post('/upload', authenticate, upload.single('video'), async (req, res) =>
 
     res.json({ message: 'Video uploaded', video_url: urlData.publicUrl });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------- Test endpoint for debugging ----------------
+router.get('/test', async (req, res) => {
+  try {
+    console.log('Testing Supabase configuration...');
+    console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? 'Set' : 'Not set');
+    console.log('SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? 'Set' : 'Not set');
+    console.log('SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Set' : 'Not set');
+
+    // Test storage bucket access
+    try {
+      const { data: buckets, error: bucketError } = await supabaseAdmin.storage.listBuckets();
+      console.log('Storage buckets:', buckets);
+      if (bucketError) {
+        console.error('Storage bucket error:', bucketError);
+      }
+    } catch (storageErr) {
+      console.error('Storage test failed:', storageErr);
+    }
+
+    res.json({
+      message: 'Test completed',
+      env: {
+        supabaseUrl: !!process.env.SUPABASE_URL,
+        anonKey: !!process.env.SUPABASE_ANON_KEY,
+        serviceRoleKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+      }
+    });
+  } catch (error) {
+    console.error('Test error:', error);
     res.status(500).json({ error: error.message });
   }
 });

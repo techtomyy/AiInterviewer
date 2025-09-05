@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "@/lib/suppabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ export default function AuthPage() {
         email,
         password,
         options: {
-          emailRedirectTo: "http://localhost:5173/dashboard",
+          emailRedirectTo: "http://localhost:5173/auth-callback",
         },
       });
       
@@ -93,10 +93,10 @@ export default function AuthPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: "http://localhost:5173/dashboard",
+        redirectTo: "http://localhost:5173/auth-callback",
       },
     });
-    
+
     if (error) {
       toast({
         title: "Google Login Failed",

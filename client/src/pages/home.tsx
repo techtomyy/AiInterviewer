@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link, useLocation } from "wouter";
-import { supabase } from "@/lib/suppabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { useEffect, useState } from "react";
 import { 

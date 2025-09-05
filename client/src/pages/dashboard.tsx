@@ -28,7 +28,7 @@ import {
   CheckCircle,
   AlertCircle,
   Brain,
-  Trash2
+  Trash2,
 } from "lucide-react";
 
 interface DashboardProps {
@@ -41,15 +41,21 @@ export default function Dashboard({ user }: DashboardProps) {
   const [openVideoUrl, setOpenVideoUrl] = useState<string | null>(null);
 
   // 📊 Fetch sessions using email fallback, in case local user_id mapping differs
-  const { data: sessionsData, isLoading: sessionsLoading, refetch } = useQuery<any[]>({
+  const {
+    data: sessionsData,
+    isLoading: sessionsLoading,
+    refetch,
+  } = useQuery<any[]>({
     queryKey: ["/api/sessions", user?.id, user?.email],
     enabled: !!user?.email || !!user?.id,
     retry: false,
     queryFn: async () => {
       try {
-        const base = `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:5000'}`;
+        const base = `${
+          (import.meta as any).env?.VITE_API_URL || "http://localhost:5000"
+        }`;
         const apiUrl = `${base}/api/candidate/sessions`;
-        const token = localStorage.getItem('supabase_token');
+        const token = localStorage.getItem("supabase_token");
 
         const res = await fetch(apiUrl, {
           headers: {
@@ -67,19 +73,20 @@ export default function Dashboard({ user }: DashboardProps) {
       } catch (error) {
         toast({
           title: "Error fetching sessions",
-          description: "Failed to load your interview sessions. Please try again.",
+          description:
+            "Failed to load your interview sessions. Please try again.",
           variant: "destructive",
         });
         return [];
       }
-    }
+    },
   });
 
   const { data: feedbackData } = useQuery<any>({
     queryKey: ["/api/sessions/feedback/all"],
     enabled: !!user,
     retry: false,
-    queryFn: async () => ({})
+    queryFn: async () => ({}),
   });
 
   // 🚀 Logout
@@ -94,17 +101,23 @@ export default function Dashboard({ user }: DashboardProps) {
 
   // 🗑️ Delete session
   async function handleDeleteSession(sessionId: string) {
-    if (!confirm("Are you sure you want to delete this interview session? This action cannot be undone.")) {
+    if (
+      !confirm(
+        "Are you sure you want to delete this interview session? This action cannot be undone."
+      )
+    ) {
       return;
     }
 
     try {
-      const base = `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:5000'}`;
+      const base = `${
+        (import.meta as any).env?.VITE_API_URL || "http://localhost:5000"
+      }`;
       const apiUrl = `${base}/api/candidate/session/${sessionId}`;
-      const token = localStorage.getItem('supabase_token');
+      const token = localStorage.getItem("supabase_token");
 
       const response = await fetch(apiUrl, {
-        method: 'DELETE',
+        method: "DELETE",
         headers: {
           ...(token && { Authorization: `Bearer ${token}` }),
         },
@@ -133,12 +146,16 @@ export default function Dashboard({ user }: DashboardProps) {
   // 🧪 Test video URL accessibility
   async function testVideoUrl(url: string) {
     try {
-      console.log('Testing video URL:', url);
-      const response = await fetch(url, { method: 'HEAD' });
-      console.log('Video URL test response:', response.status, response.headers.get('content-type'));
+      console.log("Testing video URL:", url);
+      const response = await fetch(url, { method: "HEAD" });
+      console.log(
+        "Video URL test response:",
+        response.status,
+        response.headers.get("content-type")
+      );
       return response.ok;
     } catch (error) {
-      console.error('Video URL test failed:', error);
+      console.error("Video URL test failed:", error);
       return false;
     }
   }
@@ -171,24 +188,36 @@ export default function Dashboard({ user }: DashboardProps) {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'uploaded':
-        return <Badge variant="default" className="bg-green-100 text-green-800">Completed</Badge>;
-      case 'created':
-        return <Badge variant="secondary" className="bg-blue-100 text-blue-800">In Progress</Badge>;
-      case 'processing':
-        return <Badge variant="outline" className="bg-yellow-100 text-yellow-800">Processing</Badge>;
+      case "uploaded":
+        return (
+          <Badge variant="default" className="bg-green-100 text-green-800">
+            Completed
+          </Badge>
+        );
+      case "created":
+        return (
+          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+            In Progress
+          </Badge>
+        );
+      case "processing":
+        return (
+          <Badge variant="outline" className="bg-yellow-100 text-yellow-800">
+            Processing
+          </Badge>
+        );
       default:
-        return <Badge variant="outline">{status || 'Unknown'}</Badge>;
+        return <Badge variant="outline">{status || "Unknown"}</Badge>;
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'uploaded':
+      case "uploaded":
         return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'created':
+      case "created":
         return <Clock className="h-4 w-4 text-blue-600" />;
-      case 'processing':
+      case "processing":
         return <RefreshCw className="h-4 w-4 text-yellow-600 animate-spin" />;
       default:
         return <AlertCircle className="h-4 w-4 text-gray-600" />;
@@ -226,9 +255,7 @@ export default function Dashboard({ user }: DashboardProps) {
                     {user?.email?.[0]?.toUpperCase() ?? "U"}
                   </span>
                 </div>
-                <span className="text-gray-700">
-                  {user?.email}
-                </span>
+                <span className="text-gray-700">{user?.email}</span>
               </div>
               <Link href="/interview">
                 <Button
@@ -262,7 +289,9 @@ export default function Dashboard({ user }: DashboardProps) {
               <Calendar className="h-5 w-5 text-blue-600" />
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-blue-900">{sessions.length}</p>
+              <p className="text-3xl font-bold text-blue-900">
+                {sessions.length}
+              </p>
               <p className="text-sm text-blue-700">
                 {thisWeekSessions.length} this week
               </p>
@@ -275,10 +304,10 @@ export default function Dashboard({ user }: DashboardProps) {
               <CheckCircle className="h-5 w-5 text-green-600" />
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-green-900">{completedSessions.length}</p>
-              <p className="text-sm text-green-700">
-                interviews done
+              <p className="text-3xl font-bold text-green-900">
+                {completedSessions.length}
               </p>
+              <p className="text-sm text-green-700">interviews done</p>
             </CardContent>
           </Card>
 
@@ -288,7 +317,9 @@ export default function Dashboard({ user }: DashboardProps) {
               <Target className="h-5 w-5 text-purple-600" />
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-purple-900">{averageScore.toFixed(1)}/10</p>
+              <p className="text-3xl font-bold text-purple-900">
+                {averageScore.toFixed(1)}/10
+              </p>
               <Progress value={(averageScore / 10) * 100} className="mt-2" />
             </CardContent>
           </Card>
@@ -300,11 +331,13 @@ export default function Dashboard({ user }: DashboardProps) {
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-orange-900">
-                {sessions.filter(s => s?.status === 'created' || s?.status === 'processing').length}
+                {
+                  sessions.filter(
+                    (s) => s?.status === "created" || s?.status === "processing"
+                  ).length
+                }
               </p>
-              <p className="text-sm text-orange-700">
-                sessions active
-              </p>
+              <p className="text-sm text-orange-700">sessions active</p>
             </CardContent>
           </Card>
         </div>
@@ -332,8 +365,12 @@ export default function Dashboard({ user }: DashboardProps) {
             {sessions.length === 0 ? (
               <div className="text-center py-12">
                 <Video className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No interviews yet</h3>
-                <p className="text-gray-500 mb-6">Start your first interview to see your progress here.</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No interviews yet
+                </h3>
+                <p className="text-gray-500 mb-6">
+                  Start your first interview to see your progress here.
+                </p>
                 <Link href="/interview">
                   <Button className="bg-primary hover:bg-blue-800">
                     <PlayCircle className="h-4 w-4 mr-2" />
@@ -346,16 +383,22 @@ export default function Dashboard({ user }: DashboardProps) {
                 {sessions.map((session: any) => (
                   <Card
                     key={session?.id}
-                    className={`group hover:shadow-xl transition-all duration-300 border-0 shadow-md hover:scale-[1.02] bg-gradient-to-br from-white to-gray-50 ${session?.video_url ? 'cursor-pointer' : ''}`}
+                    className={`group hover:shadow-xl transition-all duration-300 border-0 shadow-md hover:scale-[1.02] bg-gradient-to-br from-white to-gray-50 ${
+                      session?.video_url ? "cursor-pointer" : ""
+                    }`}
                     onClick={() => {
                       if (session?.video_url) {
-                        console.log('Opening video:', session.video_url);
+                        console.log("Opening video:", session.video_url);
                         setOpenVideoUrl(session.video_url);
                       } else {
-                        console.log('No video URL available for session:', session.id);
+                        console.log(
+                          "No video URL available for session:",
+                          session.id
+                        );
                         toast({
                           title: "No Video Available",
-                          description: "This session doesn't have a recorded video.",
+                          description:
+                            "This session doesn't have a recorded video.",
                           variant: "destructive",
                         });
                       }
@@ -388,8 +431,8 @@ export default function Dashboard({ user }: DashboardProps) {
                     <CardContent className="space-y-3">
                       {/* Video preview */}
                       <div className="relative rounded-md overflow-hidden bg-gray-100 aspect-video">
-                        {session?.video_url ? (
-                          <>
+{session?.video_url ? (
+  <>
                             <video
                               src={session.video_url}
                               className="w-full h-full object-cover"
@@ -397,49 +440,87 @@ export default function Dashboard({ user }: DashboardProps) {
                               playsInline
                               preload="metadata"
                               onError={(e) => {
-                                console.error('Video preview load error:', e);
-                                console.error('Video URL:', session.video_url);
-                                const videoElement = e.target as HTMLVideoElement;
-                                console.error('Video element error details:', videoElement?.error);
+                                console.error("Video preview load error:", e);
+                                console.error("Video URL:", session.video_url);
+                                const videoElement =
+                                  e.target as HTMLVideoElement;
+                                console.error(
+                                  "Video element error details:",
+                                  videoElement?.error
+                                );
+                                console.error("Video element network state:", videoElement?.networkState);
+                                console.error("Video element ready state:", videoElement?.readyState);
+
+                                // Try to fetch the video URL to check if it's accessible
+                                fetch(session.video_url, { method: 'HEAD' })
+                                  .then(response => {
+                                    console.log("Video URL fetch response:", response.status, response.headers.get('content-type'));
+                                    if (!response.ok) {
+                                      console.error("Video URL is not accessible:", response.status);
+                                    }
+                                  })
+                                  .catch(fetchError => {
+                                    console.error("Failed to fetch video URL:", fetchError);
+                                  });
+
                                 toast({
                                   title: "Video Preview Error",
-                                  description: "Unable to load video preview. The video may be corrupted or in an unsupported format.",
+                                  description:
+                                    "Unable to load video preview. The video may be corrupted or inaccessible.",
                                   variant: "destructive",
                                 });
                               }}
                               onLoadedData={() => {
-                                console.log('Video preview loaded successfully for session:', session.id);
+                                console.log(
+                                  "Video preview loaded successfully for session:",
+                                  session.id
+                                );
+                                console.log("Video URL:", session.video_url);
+                              }}
+                              onLoadStart={() => {
+                                console.log("Video load started for URL:", session.video_url);
+                              }}
+                              onCanPlay={() => {
+                                console.log("Video can play for URL:", session.video_url);
                               }}
                             />
-                            <div className="absolute inset-0 bg-black/20" />
-                            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
-                              <div className="w-12 h-12 rounded-full bg-white/80 backdrop-blur flex items-center justify-center shadow">
-                                <PlayCircle className="h-6 w-6 text-gray-800" />
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <Video className="h-10 w-10 text-gray-400" />
-                          </div>
-                        )}
+    <div className="absolute inset-0 bg-black/20" />
+    <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+      <div className="w-12 h-12 rounded-full bg-white/80 backdrop-blur flex items-center justify-center shadow">
+        <PlayCircle className="h-6 w-6 text-gray-800" />
+      </div>
+    </div>
+  </>
+) : (
+  <div className="absolute inset-0 flex items-center justify-center">
+    <Video className="h-10 w-10 text-gray-400" />
+  </div>
+)}
                       </div>
 
                       <div className="space-y-3 text-sm">
                         <div className="grid grid-cols-2 gap-3">
                           <div className="bg-gray-50 rounded-lg p-2">
-                            <span className="text-gray-500 text-xs block">Date</span>
+                            <span className="text-gray-500 text-xs block">
+                              Date
+                            </span>
                             <span className="text-gray-900 font-medium">
                               {session?.created_at
-                                ? new Date(session.created_at).toLocaleDateString()
+                                ? new Date(
+                                    session.created_at
+                                  ).toLocaleDateString()
                                 : "Unknown"}
                             </span>
                           </div>
                           <div className="bg-gray-50 rounded-lg p-2">
-                            <span className="text-gray-500 text-xs block">Time</span>
+                            <span className="text-gray-500 text-xs block">
+                              Time
+                            </span>
                             <span className="text-gray-900 font-medium">
                               {session?.created_at
-                                ? new Date(session.created_at).toLocaleTimeString()
+                                ? new Date(
+                                    session.created_at
+                                  ).toLocaleTimeString()
                                 : "Unknown"}
                             </span>
                           </div>
@@ -448,14 +529,16 @@ export default function Dashboard({ user }: DashboardProps) {
                           <div className="bg-green-50 border border-green-200 rounded-lg p-2">
                             <div className="flex items-center justify-center space-x-2">
                               <CheckCircle className="h-4 w-4 text-green-600" />
-                              <span className="text-green-700 text-sm font-medium">Video Available</span>
+                              <span className="text-green-700 text-sm font-medium">
+                                Video Available
+                              </span>
                             </div>
                           </div>
                         )}
                       </div>
 
                       <div className="flex space-x-2 pt-3">
-                        {session?.status === 'uploaded' && (
+                        {session?.status === "uploaded" && (
                           <div className="flex space-x-2 flex-1">
                             <Button
                               variant="outline"
@@ -464,11 +547,19 @@ export default function Dashboard({ user }: DashboardProps) {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (session?.video_url) {
-                                  console.log('Watch Video button clicked, URL:', session.video_url);
+                                  console.log(
+                                    "Watch Video button clicked, URL:",
+                                    session.video_url
+                                  );
                                   setOpenVideoUrl(session.video_url);
                                 } else {
-                                  console.log('Watch Video button clicked but no URL available');
-                                  toast({ title: "No video available", variant: "destructive" });
+                                  console.log(
+                                    "Watch Video button clicked but no URL available"
+                                  );
+                                  toast({
+                                    title: "No video available",
+                                    variant: "destructive",
+                                  });
                                 }
                               }}
                             >
@@ -483,13 +574,27 @@ export default function Dashboard({ user }: DashboardProps) {
                                 e.stopPropagation();
                                 if (session?.video_url) {
                                   try {
-                                    console.log('Testing video URL accessibility:', session.video_url);
-                                    const response = await fetch(session.video_url, { method: 'HEAD' });
-                                    console.log('Video URL test result:', response.status, response.headers.get('content-type'));
+                                    console.log(
+                                      "Testing video URL accessibility:",
+                                      session.video_url
+                                    );
+                                    const response = await fetch(
+                                      session.video_url,
+                                      { method: "HEAD" }
+                                    );
+                                    console.log(
+                                      "Video URL test result:",
+                                      response.status,
+                                      response.headers.get("content-type")
+                                    );
                                     if (response.ok) {
                                       toast({
                                         title: "Video URL Accessible",
-                                        description: `Status: ${response.status}, Content-Type: ${response.headers.get('content-type')}`,
+                                        description: `Status: ${
+                                          response.status
+                                        }, Content-Type: ${response.headers.get(
+                                          "content-type"
+                                        )}`,
                                       });
                                     } else {
                                       toast({
@@ -499,10 +604,14 @@ export default function Dashboard({ user }: DashboardProps) {
                                       });
                                     }
                                   } catch (error) {
-                                    console.error('Video URL test failed:', error);
+                                    console.error(
+                                      "Video URL test failed:",
+                                      error
+                                    );
                                     toast({
                                       title: "Video URL Test Failed",
-                                      description: "Could not access the video URL",
+                                      description:
+                                        "Could not access the video URL",
                                       variant: "destructive",
                                     });
                                   }
@@ -542,26 +651,40 @@ export default function Dashboard({ user }: DashboardProps) {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Link href="/interview">
-                <Button variant="outline" className="w-full justify-start h-auto p-4">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start h-auto p-4"
+                >
                   <div className="text-left">
                     <PlayCircle className="h-6 w-6 text-blue-600 mb-2" />
                     <div className="font-medium">Start New Interview</div>
-                    <div className="text-sm text-gray-500">Practice with new questions</div>
-                  </div>
-                </Button>
-              </Link>
-              
-              <Link href="/dashboard">
-                <Button variant="outline" className="w-full justify-start h-auto p-4">
-                  <div className="text-left">
-                    <TrendingUp className="h-6 w-6 text-green-600 mb-2" />
-                    <div className="font-medium">View Progress</div>
-                    <div className="text-sm text-gray-500">Track your improvement</div>
+                    <div className="text-sm text-gray-500">
+                      Practice with new questions
+                    </div>
                   </div>
                 </Button>
               </Link>
 
-              <Button variant="outline" className="w-full justify-start h-auto p-4" disabled>
+              <Link href="/dashboard">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start h-auto p-4"
+                >
+                  <div className="text-left">
+                    <TrendingUp className="h-6 w-6 text-green-600 mb-2" />
+                    <div className="font-medium">View Progress</div>
+                    <div className="text-sm text-gray-500">
+                      Track your improvement
+                    </div>
+                  </div>
+                </Button>
+              </Link>
+
+              <Button
+                variant="outline"
+                className="w-full justify-start h-auto p-4"
+                disabled
+              >
                 <div className="text-left">
                   <Brain className="h-6 w-6 text-purple-600 mb-2" />
                   <div className="font-medium">AI Analysis</div>
@@ -574,7 +697,10 @@ export default function Dashboard({ user }: DashboardProps) {
       </main>
 
       {/* Video Watch Dialog */}
-      <Dialog open={!!openVideoUrl} onOpenChange={(o) => !o && setOpenVideoUrl(null)}>
+      <Dialog
+        open={!!openVideoUrl}
+        onOpenChange={(o) => !o && setOpenVideoUrl(null)}
+      >
         <DialogContent className="max-w-4xl bg-gradient-to-br from-gray-50 to-gray-100">
           <DialogHeader className="bg-white rounded-lg p-4 shadow-sm">
             <DialogTitle className="flex items-center space-x-2 text-lg font-semibold text-gray-800">
@@ -590,24 +716,47 @@ export default function Dashboard({ user }: DashboardProps) {
                 className="w-full rounded-lg shadow-lg"
                 preload="metadata"
                 onError={(e) => {
-                  console.error('Video dialog load error:', e);
-                  console.error('Video URL:', openVideoUrl);
+                  console.error("Video dialog load error:", e);
+                  console.error("Video URL:", openVideoUrl);
                   const videoElement = e.target as HTMLVideoElement;
-                  console.error('Video element error details:', videoElement?.error);
+                  console.error(
+                    "Video element error details:",
+                    videoElement?.error
+                  );
+                  console.error("Video element network state:", videoElement?.networkState);
+                  console.error("Video element ready state:", videoElement?.readyState);
+
+                  // Try to fetch the video URL to check if it's accessible
+                  fetch(openVideoUrl, { method: 'HEAD' })
+                    .then(response => {
+                      console.log("Video URL fetch response:", response.status, response.headers.get('content-type'));
+                      if (!response.ok) {
+                        console.error("Video URL is not accessible:", response.status);
+                      }
+                    })
+                    .catch(fetchError => {
+                      console.error("Failed to fetch video URL:", fetchError);
+                    });
+
                   toast({
                     title: "Video Playback Error",
-                    description: "Unable to load video. The video file may be corrupted or inaccessible.",
+                    description:
+                      "Unable to load video. The video file may be corrupted or inaccessible.",
                     variant: "destructive",
                   });
                 }}
                 onLoadedData={(e) => {
-                  console.log('Video loaded successfully in dialog');
-                  console.log('Video URL:', openVideoUrl);
+                  console.log("Video loaded successfully in dialog");
+                  console.log("Video URL:", openVideoUrl);
                   const videoElement = e.target as HTMLVideoElement;
-                  console.log('Video duration:', videoElement?.duration);
+                  console.log("Video duration:", videoElement?.duration);
+                  console.log("Video dimensions:", videoElement?.videoWidth, "x", videoElement?.videoHeight);
                 }}
                 onLoadStart={() => {
-                  console.log('Video load started for URL:', openVideoUrl);
+                  console.log("Video load started for URL:", openVideoUrl);
+                }}
+                onCanPlay={() => {
+                  console.log("Video can play for URL:", openVideoUrl);
                 }}
               />
               <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
