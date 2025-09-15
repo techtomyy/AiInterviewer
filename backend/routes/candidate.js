@@ -4,7 +4,41 @@ const { createClient } = require('@supabase/supabase-js');
 const { supabase } = require('../config/supabase');
 const { supabaseAdmin } = require('../config/supabaseAdmin');
 
+// Disable RLS for admin client to bypass row-level security
+// This is necessary for insert/update operations that fail due to RLS policies
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const fetch = require('node-fetch');
+
+// Set FFmpeg path
+ffmpeg.setFfmpegPath(ffmpegPath);
+
 const router = express.Router();
+
+// Video conversion function
+const convertVideoToMp4 = (inputPath, outputPath) => {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .toFormat('mp4')
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .on('end', () => {
+        console.log('Video conversion completed successfully');
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error('Error during video conversion:', err);
+        reject(err);
+      })
+      .on('progress', (progress) => {
+        console.log(`Conversion progress: ${progress.percent}% done`);
+      })
+      .save(outputPath);
+  });
+};
 
 // Multer setup for file upload
 const upload = multer({ storage: multer.memoryStorage() });
@@ -37,9 +71,15 @@ const authenticate = async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    console.log("User authenticated:", data.user.id);
+    console.log("User authenticated:", data.user.email);
     req.user = data.user;
     req.token = token; // Store token for user-specific client
+
+    // Create user-specific Supabase client with the user's token
+    req.supabaseUser = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } }
+    });
+
     next();
   } catch (err) {
     console.error("Auth middleware error:", err);
@@ -55,7 +95,7 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
     const file = req.file;
     const userId = req.user.id;
 
-    console.log('User ID:', userId);
+    console.log('User Email:', req.user.email);
     console.log('File received:', file ? file.originalname : 'No file');
     console.log('File details:', {
       originalname: file?.originalname,
@@ -66,8 +106,9 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
 
     if (!file) return res.status(400).json({ error: 'No video file provided' });
 
-    // Upload to Supabase Storage
-    const fileName = `${userId}/${Date.now()}_${file.originalname}`;
+    // Upload to Supabase Storage in raw/ folder with sessionId in filename
+    const sessionId = req.body.sessionId || 'unknownsession';
+    const fileName = `raw/${req.user.email}/${sessionId}_${Date.now()}_${file.originalname}`;
     console.log('Uploading to storage:', fileName);
     console.log('File buffer size:', file.buffer.length);
     console.log('Content type being set:', file.mimetype);
@@ -92,8 +133,8 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
     // Ensure user exists in users table
     const { data: existingUser } = await supabaseAdmin
       .from('users')
-      .select('id')
-      .eq('id', userId)
+      .select('email')
+      .eq('email', req.user.email)
       .single();
 
     if (!existingUser) {
@@ -107,10 +148,10 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
       }
     }
 
-    // Save to database
-    const { data: sessionData, error: dbError } = await supabase
+    // Save to database - video_url will be updated by the conversion process
+    const { data: sessionData, error: dbError } = await req.supabaseUser
       .from('interview_sessions')
-      .insert([{ user_id: userId, title, video_url: urlData.publicUrl }])
+      .insert([{ user_email: req.user.email, title, status: 'processing', video_url: urlData.publicUrl }])
       .select();
 
     if (dbError) {
@@ -118,7 +159,117 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
       throw dbError;
     }
 
-    res.status(201).json({ message: 'Session created', session: sessionData[0] });
+    // Start video conversion process
+    const convertVideo = async (userClient) => {
+      try {
+        // Update conversion status to converting
+        await userClient
+          .from('conversions')
+          .update({ status: 'converting', updated_at: new Date().toISOString() })
+          .eq('filename', fileName);
+
+        // Create temporary files
+        const tempDir = os.tmpdir();
+        const inputPath = path.join(tempDir, `input_${Date.now()}.webm`);
+        const outputPath = path.join(tempDir, `output_${Date.now()}.mp4`);
+
+        // Download the webm file
+        const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+          .from('interview-videos')
+          .download(fileName);
+
+        if (downloadError || !fileData) {
+          throw new Error(`Failed to download file: ${downloadError?.message}`);
+        }
+
+        // Write to temporary file
+        fs.writeFileSync(inputPath, Buffer.from(await fileData.arrayBuffer()));
+
+        // Convert to MP4
+        await convertVideoToMp4(inputPath, outputPath);
+
+        // Read converted file
+        const convertedBuffer = fs.readFileSync(outputPath);
+
+        // Upload converted MP4 to converted/ folder
+        const mp4FileName = fileName.replace('raw/', 'converted/').replace('.webm', '.mp4');
+        const { error: uploadMp4Error } = await supabaseAdmin.storage
+          .from('interview-videos')
+          .upload(mp4FileName, convertedBuffer, {
+            contentType: 'video/mp4',
+            upsert: true
+          });
+
+        if (uploadMp4Error) {
+          throw new Error(`Failed to upload MP4: ${uploadMp4Error.message}`);
+        }
+
+        // Get MP4 public URL
+        const { data: mp4UrlData } = supabaseAdmin.storage
+          .from('interview-videos')
+          .getPublicUrl(mp4FileName);
+
+        // Update conversion record
+        await userClient
+          .from('conversions')
+          .update({
+            status: 'completed',
+            converted_url: mp4UrlData.publicUrl,
+            updated_at: new Date().toISOString()
+          })
+          .eq('filename', fileName);
+
+        // Update session with MP4 URL
+        await userClient
+          .from('interview_sessions')
+          .update({
+            video_url: mp4UrlData.publicUrl,
+            status: 'completed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', sessionData[0].id);
+
+        // Clean up temporary files
+        try {
+          fs.unlinkSync(inputPath);
+          fs.unlinkSync(outputPath);
+        } catch (cleanupError) {
+          console.warn('Failed to clean up temporary files:', cleanupError);
+        }
+
+        console.log('Video conversion completed successfully');
+      } catch (conversionError) {
+        console.error('Video conversion failed:', conversionError);
+
+        // Update conversion status to failed
+        await userClient
+          .from('conversions')
+          .update({
+            status: 'failed',
+            error_message: conversionError.message,
+            updated_at: new Date().toISOString()
+          })
+          .eq('filename', fileName);
+
+        // Update session status to failed
+        await userClient
+          .from('interview_sessions')
+          .update({
+            status: 'failed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', sessionData[0].id);
+      }
+    };
+
+    // Start conversion asynchronously
+    convertVideo(req.supabaseUser);
+
+    res.status(201).json({
+      message: 'Session created - video conversion in progress',
+      session: sessionData[0],
+      conversion_status: 'queued'
+    });
   } catch (error) {
     console.error('Session creation error:', error);
     res.status(500).json({ error: error.message });
@@ -134,10 +285,24 @@ router.get('/session/:id/status', authenticate, async (req, res) => {
 // ---------------- Get user's sessions ----------------
 router.get('/sessions', authenticate, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await req.supabaseUser
       .from('interview_sessions')
       .select('*')
-      .eq('user_id', req.user.id);
+      .eq('user_email', req.user.email);
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------- Get user's conversions ----------------
+router.get('/conversions', authenticate, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('conversions')
+      .select('*')
+      .order('created_at', { ascending: false });
     if (error) throw error;
     res.json(data);
   } catch (error) {
@@ -153,7 +318,7 @@ router.delete('/session/:id', authenticate, async (req, res) => {
       .from('interview_sessions')
       .select('*')
       .eq('id', id)
-      .eq('user_id', req.user.id)
+      .eq('user_email', req.user.email)
       .single();
 
     if (fetchError || !session) return res.status(404).json({ error: 'Session not found' });
@@ -178,7 +343,7 @@ router.post('/upload', authenticate, upload.single('video'), async (req, res) =>
   try {
     const { sessionId } = req.body;
     const file = req.file;
-    const userId = req.user.id;
+    const userEmail = req.user.email;
 
     if (!file || !sessionId) return res.status(400).json({ error: 'Video file and sessionId required' });
 
@@ -186,12 +351,12 @@ router.post('/upload', authenticate, upload.single('video'), async (req, res) =>
       .from('interview_sessions')
       .select('*')
       .eq('id', sessionId)
-      .eq('user_id', userId)
+      .eq('user_email', userEmail)
       .single();
 
     if (fetchError || !session) return res.status(404).json({ error: 'Session not found' });
 
-    const fileName = `${userId}/${sessionId}_${file.originalname}`;
+    const fileName = `raw/${userEmail}/${sessionId}_${file.originalname}`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from('interview-videos')
       .upload(fileName, file.buffer, {

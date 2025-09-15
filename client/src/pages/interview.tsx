@@ -274,15 +274,20 @@ function Interview({ user }: InterviewProps) {
               <CardContent className="p-4 text-center">
                 <div className="flex items-center justify-center space-x-2 mb-2">
                   <Video className="h-5 w-5 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-800">Recording Controls</span>
+                  <span className="text-sm font-medium text-blue-800">
+                    Recording Controls
+                  </span>
                 </div>
                 <p className="text-sm text-blue-700">
-                  Use the recording controls in the video area below to start and stop your interview session.
+                  Use the recording controls in the video area below to start
+                  and stop your interview session.
                 </p>
                 {loading && (
                   <div className="mt-4">
                     <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
-                    <p className="text-sm text-blue-600 mt-2">Processing your recording...</p>
+                    <p className="text-sm text-blue-600 mt-2">
+                      Processing your recording...
+                    </p>
                   </div>
                 )}
               </CardContent>

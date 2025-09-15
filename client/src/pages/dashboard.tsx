@@ -49,6 +49,14 @@ export default function Dashboard({ user }: DashboardProps) {
     queryKey: ["/api/sessions", user?.id, user?.email],
     enabled: !!user?.email || !!user?.id,
     retry: false,
+    refetchInterval: (query) => {
+      // Refetch every 5 seconds if any session is still processing
+      const data = query.state.data;
+      const hasProcessing =
+        Array.isArray(data) &&
+        data.some((session) => session.status === "processing");
+      return hasProcessing ? 5000 : false;
+    },
     queryFn: async () => {
       try {
         const base = `${
@@ -69,6 +77,8 @@ export default function Dashboard({ user }: DashboardProps) {
         }
 
         const json = await res.json();
+
+        // Return all sessions - we'll show conversion status for each
         return json || [];
       } catch (error) {
         toast({
@@ -77,6 +87,39 @@ export default function Dashboard({ user }: DashboardProps) {
             "Failed to load your interview sessions. Please try again.",
           variant: "destructive",
         });
+        return [];
+      }
+    },
+  });
+
+  // 📊 Fetch conversion status
+  const { data: conversionsData } = useQuery<any[]>({
+    queryKey: ["/api/conversions", user?.email],
+    enabled: !!user?.email,
+    retry: false,
+    refetchInterval: 5000, // Refetch every 5 seconds to check conversion status
+    queryFn: async () => {
+      try {
+        const base = `${
+          (import.meta as any).env?.VITE_API_URL || "http://localhost:5000"
+        }`;
+        const apiUrl = `${base}/api/candidate/conversions`;
+        const token = localStorage.getItem("supabase_token");
+
+        const res = await fetch(apiUrl, {
+          headers: {
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+
+        if (!res.ok) {
+          return [];
+        }
+
+        const json = await res.json();
+        return json || [];
+      } catch (error) {
+        console.error("Error fetching conversions:", error);
         return [];
       }
     },
@@ -163,6 +206,25 @@ export default function Dashboard({ user }: DashboardProps) {
   // 🔒 Authentication is now handled by withAuth HOC wrapper
   // No need for duplicate redirect logic here
 
+  const conversions = conversionsData ?? []; // ✅ always an array
+
+  // Helper function to get conversion status for a session
+  const getConversionStatus = (session: any) => {
+    if (!session?.video_url) return null;
+
+    // Extract filename from video URL - look for .webm files in raw folder
+    const urlParts = session.video_url.split("/");
+    const fileName = urlParts[urlParts.length - 1];
+
+    // For raw .webm files, find conversion record
+    if (fileName.includes(".webm")) {
+      const conversion = conversions.find((c: any) => c.filename === fileName);
+      return conversion;
+    }
+
+    return null;
+  };
+
   const sessions = sessionsData ?? []; // ✅ always an array
 
   // 🔢 Stats
@@ -186,8 +248,46 @@ export default function Dashboard({ user }: DashboardProps) {
     return sessionDate > weekAgo;
   });
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const getStatusBadge = (session: any) => {
+    const conversion = getConversionStatus(session);
+
+    // If there's a conversion in progress, show conversion status
+    if (conversion) {
+      switch (conversion.status) {
+        case "pending":
+          return (
+            <Badge variant="outline" className="bg-gray-100 text-gray-800">
+              Queued
+            </Badge>
+          );
+        case "converting":
+          return (
+            <Badge
+              variant="outline"
+              className="bg-blue-100 text-blue-800 animate-pulse"
+            >
+              Converting...
+            </Badge>
+          );
+        case "completed":
+          return (
+            <Badge variant="default" className="bg-green-100 text-green-800">
+              Converted
+            </Badge>
+          );
+        case "failed":
+          return (
+            <Badge variant="destructive" className="bg-red-100 text-red-800">
+              Failed
+            </Badge>
+          );
+        default:
+          return <Badge variant="outline">{conversion.status}</Badge>;
+      }
+    }
+
+    // Fallback to session status
+    switch (session?.status) {
       case "uploaded":
         return (
           <Badge variant="default" className="bg-green-100 text-green-800">
@@ -207,7 +307,7 @@ export default function Dashboard({ user }: DashboardProps) {
           </Badge>
         );
       default:
-        return <Badge variant="outline">{status || "Unknown"}</Badge>;
+        return <Badge variant="outline">{session?.status || "Unknown"}</Badge>;
     }
   };
 
@@ -413,7 +513,7 @@ export default function Dashboard({ user }: DashboardProps) {
                           </span>
                         </div>
                         <div className="flex items-center space-x-2">
-                          {getStatusBadge(session?.status)}
+                          {getStatusBadge(session)}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -431,8 +531,8 @@ export default function Dashboard({ user }: DashboardProps) {
                     <CardContent className="space-y-3">
                       {/* Video preview */}
                       <div className="relative rounded-md overflow-hidden bg-gray-100 aspect-video">
-{session?.video_url ? (
-  <>
+                        {session?.video_url ? (
+                          <>
                             <video
                               src={session.video_url}
                               className="w-full h-full object-cover"
@@ -448,19 +548,35 @@ export default function Dashboard({ user }: DashboardProps) {
                                   "Video element error details:",
                                   videoElement?.error
                                 );
-                                console.error("Video element network state:", videoElement?.networkState);
-                                console.error("Video element ready state:", videoElement?.readyState);
+                                console.error(
+                                  "Video element network state:",
+                                  videoElement?.networkState
+                                );
+                                console.error(
+                                  "Video element ready state:",
+                                  videoElement?.readyState
+                                );
 
                                 // Try to fetch the video URL to check if it's accessible
-                                fetch(session.video_url, { method: 'HEAD' })
-                                  .then(response => {
-                                    console.log("Video URL fetch response:", response.status, response.headers.get('content-type'));
+                                fetch(session.video_url, { method: "HEAD" })
+                                  .then((response) => {
+                                    console.log(
+                                      "Video URL fetch response:",
+                                      response.status,
+                                      response.headers.get("content-type")
+                                    );
                                     if (!response.ok) {
-                                      console.error("Video URL is not accessible:", response.status);
+                                      console.error(
+                                        "Video URL is not accessible:",
+                                        response.status
+                                      );
                                     }
                                   })
-                                  .catch(fetchError => {
-                                    console.error("Failed to fetch video URL:", fetchError);
+                                  .catch((fetchError) => {
+                                    console.error(
+                                      "Failed to fetch video URL:",
+                                      fetchError
+                                    );
                                   });
 
                                 toast({
@@ -478,24 +594,30 @@ export default function Dashboard({ user }: DashboardProps) {
                                 console.log("Video URL:", session.video_url);
                               }}
                               onLoadStart={() => {
-                                console.log("Video load started for URL:", session.video_url);
+                                console.log(
+                                  "Video load started for URL:",
+                                  session.video_url
+                                );
                               }}
                               onCanPlay={() => {
-                                console.log("Video can play for URL:", session.video_url);
+                                console.log(
+                                  "Video can play for URL:",
+                                  session.video_url
+                                );
                               }}
                             />
-    <div className="absolute inset-0 bg-black/20" />
-    <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
-      <div className="w-12 h-12 rounded-full bg-white/80 backdrop-blur flex items-center justify-center shadow">
-        <PlayCircle className="h-6 w-6 text-gray-800" />
-      </div>
-    </div>
-  </>
-) : (
-  <div className="absolute inset-0 flex items-center justify-center">
-    <Video className="h-10 w-10 text-gray-400" />
-  </div>
-)}
+                            <div className="absolute inset-0 bg-black/20" />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+                              <div className="w-12 h-12 rounded-full bg-white/80 backdrop-blur flex items-center justify-center shadow">
+                                <PlayCircle className="h-6 w-6 text-gray-800" />
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <Video className="h-10 w-10 text-gray-400" />
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-3 text-sm">
@@ -525,20 +647,79 @@ export default function Dashboard({ user }: DashboardProps) {
                             </span>
                           </div>
                         </div>
-                        {session?.video_url && (
-                          <div className="bg-green-50 border border-green-200 rounded-lg p-2">
-                            <div className="flex items-center justify-center space-x-2">
-                              <CheckCircle className="h-4 w-4 text-green-600" />
-                              <span className="text-green-700 text-sm font-medium">
-                                Video Available
-                              </span>
-                            </div>
-                          </div>
-                        )}
+                        {(() => {
+                          const conversion = getConversionStatus(session);
+                          if (conversion) {
+                            switch (conversion.status) {
+                              case "pending":
+                                return (
+                                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-2">
+                                    <div className="flex items-center justify-center space-x-2">
+                                      <Clock className="h-4 w-4 text-gray-600" />
+                                      <span className="text-gray-700 text-sm font-medium">
+                                        Queued for conversion
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              case "converting":
+                                return (
+                                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                                    <div className="flex items-center justify-center space-x-2">
+                                      <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
+                                      <span className="text-blue-700 text-sm font-medium">
+                                        Converting video...
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              case "completed":
+                                return (
+                                  <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+                                    <div className="flex items-center justify-center space-x-2">
+                                      <CheckCircle className="h-4 w-4 text-green-600" />
+                                      <span className="text-green-700 text-sm font-medium">
+                                        Video Ready
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              case "failed":
+                                return (
+                                  <div className="bg-red-50 border border-red-200 rounded-lg p-2">
+                                    <div className="flex items-center justify-center space-x-2">
+                                      <AlertCircle className="h-4 w-4 text-red-600" />
+                                      <span className="text-red-700 text-sm font-medium">
+                                        Conversion Failed
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                            }
+                          } else if (session?.video_url) {
+                            return (
+                              <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+                                <div className="flex items-center justify-center space-x-2">
+                                  <CheckCircle className="h-4 w-4 text-green-600" />
+                                  <span className="text-green-700 text-sm font-medium">
+                                    Video Available
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
 
                       <div className="flex space-x-2 pt-3">
-                        {session?.status === "uploaded" && (
+                        {(() => {
+                          const conversion = getConversionStatus(session);
+                          return (
+                            conversion?.status === "completed" ||
+                            (!conversion && session?.status === "uploaded")
+                          );
+                        })() && (
                           <div className="flex space-x-2 flex-1">
                             <Button
                               variant="outline"
@@ -723,18 +904,31 @@ export default function Dashboard({ user }: DashboardProps) {
                     "Video element error details:",
                     videoElement?.error
                   );
-                  console.error("Video element network state:", videoElement?.networkState);
-                  console.error("Video element ready state:", videoElement?.readyState);
+                  console.error(
+                    "Video element network state:",
+                    videoElement?.networkState
+                  );
+                  console.error(
+                    "Video element ready state:",
+                    videoElement?.readyState
+                  );
 
                   // Try to fetch the video URL to check if it's accessible
-                  fetch(openVideoUrl, { method: 'HEAD' })
-                    .then(response => {
-                      console.log("Video URL fetch response:", response.status, response.headers.get('content-type'));
+                  fetch(openVideoUrl, { method: "HEAD" })
+                    .then((response) => {
+                      console.log(
+                        "Video URL fetch response:",
+                        response.status,
+                        response.headers.get("content-type")
+                      );
                       if (!response.ok) {
-                        console.error("Video URL is not accessible:", response.status);
+                        console.error(
+                          "Video URL is not accessible:",
+                          response.status
+                        );
                       }
                     })
-                    .catch(fetchError => {
+                    .catch((fetchError) => {
                       console.error("Failed to fetch video URL:", fetchError);
                     });
 
@@ -750,7 +944,12 @@ export default function Dashboard({ user }: DashboardProps) {
                   console.log("Video URL:", openVideoUrl);
                   const videoElement = e.target as HTMLVideoElement;
                   console.log("Video duration:", videoElement?.duration);
-                  console.log("Video dimensions:", videoElement?.videoWidth, "x", videoElement?.videoHeight);
+                  console.log(
+                    "Video dimensions:",
+                    videoElement?.videoWidth,
+                    "x",
+                    videoElement?.videoHeight
+                  );
                 }}
                 onLoadStart={() => {
                   console.log("Video load started for URL:", openVideoUrl);

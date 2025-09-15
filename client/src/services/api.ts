@@ -91,6 +91,14 @@ class ApiService {
     });
     return this.handleResponse(response);
   }
+
+  async getConversions() {
+    const response = await fetch(`${API_BASE_URL}/candidate/conversions`, {
+      method: 'GET',
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
 }
 
 export const apiService = new ApiService();

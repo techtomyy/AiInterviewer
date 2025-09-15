@@ -3,12 +3,12 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  Play, 
-  Square, 
-  Pause, 
-  RotateCcw, 
-  Video, 
+import {
+  Play,
+  Square,
+  Pause,
+  RotateCcw,
+  Video,
   VideoOff,
   Mic,
   MicOff,
@@ -18,7 +18,7 @@ import {
   RefreshCw,
   Upload,
   CheckCircle,
-  XCircle
+  XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
@@ -36,31 +36,50 @@ export default function VideoRecorder({
   onStartRecording,
   onStopRecording,
   timer,
-  sessionId
+  sessionId,
 }: VideoRecorderProps) {
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(
+    null
+  );
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [hasRecorded, setHasRecorded] = useState(false);
   const [volumeLevel, setVolumeLevel] = useState(0);
-  const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
+  const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>(
+    []
+  );
   const [isInitializing, setIsInitializing] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [uploadStatus, setUploadStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number>();
+  const autoRetryTimeoutRef = useRef<NodeJS.Timeout>();
   const { toast } = useToast();
 
   // Initialize media stream
   useEffect(() => {
     initializeMedia();
+
+    // Auto-retry mechanism if video doesn't load within 5 seconds
+    autoRetryTimeoutRef.current = setTimeout(() => {
+      if (!mediaStream) {
+        console.log("⏰ Auto-retrying camera initialization...");
+        initializeMedia();
+      }
+    }, 5000);
+
     return () => {
+      if (autoRetryTimeoutRef.current) {
+        clearTimeout(autoRetryTimeoutRef.current);
+      }
       cleanup();
     };
   }, []);
@@ -80,7 +99,9 @@ export default function VideoRecorder({
   const enumerateDevices = async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      const videoDevices = devices.filter(
+        (device) => device.kind === "videoinput"
+      );
       setAvailableDevices(videoDevices);
       return videoDevices;
     } catch (error) {
@@ -90,131 +111,220 @@ export default function VideoRecorder({
 
   const initializeMedia = async () => {
     setIsInitializing(true);
+    console.log("🎥 Starting camera initialization...");
+
     try {
       // First enumerate devices to help with DroidCam detection
       const videoDevices = await enumerateDevices();
-      
+      console.log("📱 Available video devices:", videoDevices);
+
       // Try to find DroidCam device first
-      const droidCamDevice = videoDevices.find(device =>
-        device.label.toLowerCase().includes('droidcam') ||
-        device.label.toLowerCase().includes('virtual') ||
-        device.label.toLowerCase().includes('webcam') ||
-        device.label.toLowerCase().includes('android') ||
-        device.label.toLowerCase().includes('phone') ||
-        device.label.toLowerCase().includes('ip camera') ||
-        device.label.toLowerCase().includes('network')
+      const droidCamDevice = videoDevices.find(
+        (device) =>
+          device.label.toLowerCase().includes("droidcam") ||
+          device.label.toLowerCase().includes("virtual") ||
+          device.label.toLowerCase().includes("webcam") ||
+          device.label.toLowerCase().includes("android") ||
+          device.label.toLowerCase().includes("phone") ||
+          device.label.toLowerCase().includes("ip camera") ||
+          device.label.toLowerCase().includes("network")
       );
+
+      console.log("🎯 Selected device:", droidCamDevice || "Default device");
 
       let stream;
 
       if (droidCamDevice) {
         // Try to use DroidCam device specifically with relaxed constraints
         try {
+          console.log("📹 Trying DroidCam with specific constraints...");
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
               deviceId: { exact: droidCamDevice.deviceId },
               width: { ideal: 1280, min: 640 },
               height: { ideal: 720, min: 480 },
-              frameRate: { ideal: 30, min: 15 }
+              frameRate: { ideal: 30, min: 15 },
             },
             audio: {
               echoCancellation: true,
               noiseSuppression: true,
-              sampleRate: 44100
-            }
+              sampleRate: 44100,
+            },
           });
+          console.log("✅ DroidCam stream obtained successfully");
         } catch (droidCamError) {
-          console.log('DroidCam specific constraints failed, trying relaxed constraints:', droidCamError);
+          console.log(
+            "❌ DroidCam specific constraints failed, trying relaxed constraints:",
+            droidCamError
+          );
           // Fallback to relaxed constraints for DroidCam
           try {
             stream = await navigator.mediaDevices.getUserMedia({
               video: {
                 deviceId: { exact: droidCamDevice.deviceId },
                 width: { ideal: 640 },
-                height: { ideal: 480 }
+                height: { ideal: 480 },
               },
               audio: {
                 echoCancellation: false,
-                noiseSuppression: false
-              }
+                noiseSuppression: false,
+              },
             });
+            console.log("✅ DroidCam stream obtained with relaxed constraints");
           } catch (relaxedError) {
-            console.log('Relaxed DroidCam constraints failed, trying any video:', relaxedError);
+            console.log(
+              "❌ Relaxed DroidCam constraints failed, trying any video:",
+              relaxedError
+            );
             // Last resort - try any video device
             stream = await navigator.mediaDevices.getUserMedia({
               video: true,
-              audio: true
+              audio: true,
             });
+            console.log("✅ Fallback stream obtained");
           }
         }
       } else {
         // No DroidCam device found, use default constraints
         try {
+          console.log("📹 Trying default constraints...");
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
               width: { ideal: 1280 },
-              height: { ideal: 720 }
+              height: { ideal: 720 },
             },
             audio: {
               echoCancellation: true,
               noiseSuppression: true,
-              sampleRate: 44100
-            }
+              sampleRate: 44100,
+            },
           });
+          console.log("✅ Default stream obtained");
         } catch (defaultError) {
-          console.log('Default constraints failed, trying basic video:', defaultError);
+          console.log(
+            "❌ Default constraints failed, trying basic video:",
+            defaultError
+          );
           // Fallback to basic constraints
           stream = await navigator.mediaDevices.getUserMedia({
             video: true,
-            audio: true
+            audio: true,
           });
+          console.log("✅ Basic stream obtained");
         }
       }
 
+      console.log("🎬 Stream tracks:", {
+        video: stream.getVideoTracks().length,
+        audio: stream.getAudioTracks().length,
+      });
+
       setMediaStream(stream);
-      
+
       if (videoRef.current) {
+        console.log("🎥 Setting up video element...");
         videoRef.current.srcObject = stream;
-        // Wait for video to load
-        videoRef.current.onloadedmetadata = () => {
-          console.log('Video loaded successfully');
-          console.log('Video dimensions:', videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
-          setIsInitializing(false);
+        videoRef.current.muted = true; // Important for autoplay
+        videoRef.current.volume = 0; // Mute to prevent feedback
+
+        // Wait for video to load and play
+        videoRef.current.onloadedmetadata = async () => {
+          console.log("📊 Video metadata loaded");
+          console.log(
+            "📐 Video dimensions:",
+            videoRef.current?.videoWidth,
+            "x",
+            videoRef.current?.videoHeight
+          );
+          console.log("📺 Video readyState:", videoRef.current?.readyState);
+
+          try {
+            // Ensure video plays (required for some browsers)
+            console.log("▶️ Attempting to play video...");
+            await videoRef.current!.play();
+            console.log("✅ Video playback started successfully");
+            setIsInitializing(false);
+          } catch (playError) {
+            console.error("❌ Error starting video playback:", playError);
+            setIsInitializing(false);
+          }
         };
-        
+
         // Add error handling for video
         videoRef.current.onerror = (error) => {
-          console.error('Video error:', error);
+          console.error("❌ Video element error:", error);
+          console.error("❌ Video error code:", videoRef.current?.error?.code);
+          console.error(
+            "❌ Video error message:",
+            videoRef.current?.error?.message
+          );
+          console.error(
+            "❌ Video network state:",
+            videoRef.current?.networkState
+          );
+          console.error("❌ Video ready state:", videoRef.current?.readyState);
           setIsInitializing(false);
         };
+
+        // Handle video pause/play events
+        videoRef.current.onplay = () => {
+          console.log("▶️ Video started playing");
+        };
+
+        videoRef.current.onpause = () => {
+          console.log("⏸️ Video paused");
+        };
+
+        videoRef.current.oncanplay = () => {
+          console.log("🎬 Video can play");
+        };
+
+        videoRef.current.onwaiting = () => {
+          console.log("⏳ Video waiting for data");
+        };
+
+        // Force play immediately if metadata is already loaded
+        if (videoRef.current.readyState >= 1) {
+          console.log("🚀 Force playing video (metadata already loaded)");
+          videoRef.current.play().catch(console.error);
+        }
+      } else {
+        console.error("❌ Video ref is null!");
+        setIsInitializing(false);
       }
 
       toast({
         title: "Camera Ready",
-        description: droidCamDevice 
-          ? `Connected to ${droidCamDevice.label}` 
+        description: droidCamDevice
+          ? `Connected to ${droidCamDevice.label}`
           : "Your camera and microphone are connected successfully.",
       });
     } catch (error) {
-      console.error('Error accessing media devices:', error);
+      console.error("❌ Error accessing media devices:", error);
       setIsInitializing(false);
-      
-      let errorMessage = "Unable to access camera or microphone. Please check your permissions.";
-      
+
+      let errorMessage =
+        "Unable to access camera or microphone. Please check your permissions.";
+
       if (error instanceof Error) {
-        if (error.name === 'NotAllowedError') {
-          errorMessage = "Camera access denied. Please allow camera permissions and refresh the page.";
-        } else if (error.name === 'NotFoundError') {
-          errorMessage = "No camera found. Please ensure DroidCam is running and connected.";
-        } else if (error.name === 'NotReadableError') {
-          errorMessage = "Camera is in use by another application. Please close other apps using the camera.";
-        } else if (error.name === 'OverconstrainedError') {
-          errorMessage = "Camera constraints not supported. Please check DroidCam settings.";
-        } else if (error.name === 'TypeError') {
-          errorMessage = "Camera initialization error. Please restart DroidCam and refresh the page.";
+        if (error.name === "NotAllowedError") {
+          errorMessage =
+            "Camera access denied. Please allow camera permissions and refresh the page.";
+        } else if (error.name === "NotFoundError") {
+          errorMessage =
+            "No camera found. Please ensure DroidCam is running and connected.";
+        } else if (error.name === "NotReadableError") {
+          errorMessage =
+            "Camera is in use by another application. Please close other apps using the camera.";
+        } else if (error.name === "OverconstrainedError") {
+          errorMessage =
+            "Camera constraints not supported. Please check DroidCam settings.";
+        } else if (error.name === "TypeError") {
+          errorMessage =
+            "Camera initialization error. Please restart DroidCam and refresh the page.";
         }
       }
-      
+
       toast({
         title: "Media Access Error",
         description: errorMessage,
@@ -233,7 +343,8 @@ export default function VideoRecorder({
 
     try {
       audioContextRef.current = new AudioContext();
-      const source = audioContextRef.current.createMediaStreamSource(mediaStream);
+      const source =
+        audioContextRef.current.createMediaStreamSource(mediaStream);
       analyserRef.current = audioContextRef.current.createAnalyser();
       analyserRef.current.fftSize = 256;
       source.connect(analyserRef.current);
@@ -253,7 +364,7 @@ export default function VideoRecorder({
 
       updateVolumeLevel();
     } catch (error) {
-      console.error('Error setting up audio analysis:', error);
+      console.error("Error setting up audio analysis:", error);
     }
   };
 
@@ -270,32 +381,32 @@ export default function VideoRecorder({
     try {
       // Try different MIME types for better compatibility
       // Prioritize formats that are widely supported for both recording and playback
-      let mimeType = 'video/webm;codecs=vp8,opus'; // VP8 is more widely supported than VP9
+      let mimeType = "video/webm;codecs=vp8,opus"; // VP8 is more widely supported than VP9
       if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/webm;codecs=vp9,opus';
+        mimeType = "video/webm;codecs=vp9,opus";
         if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'video/webm';
+          mimeType = "video/webm";
           if (!MediaRecorder.isTypeSupported(mimeType)) {
             // Last resort - try basic video without specific codecs
-            mimeType = 'video/webm';
+            mimeType = "video/webm";
           }
         }
       }
 
-      console.log('Using MIME type:', mimeType);
-      console.log('Available MIME types:');
+      console.log("Using MIME type:", mimeType);
+      console.log("Available MIME types:");
       const supportedTypes = [
-        'video/webm;codecs=vp8,opus',
-        'video/webm;codecs=vp9,opus',
-        'video/webm',
-        'video/mp4'
+        "video/webm;codecs=vp8,opus",
+        "video/webm;codecs=vp9,opus",
+        "video/webm",
+        "video/mp4",
       ];
-      supportedTypes.forEach(type => {
+      supportedTypes.forEach((type) => {
         console.log(`${type}: ${MediaRecorder.isTypeSupported(type)}`);
       });
 
       const recorder = new MediaRecorder(mediaStream, {
-        mimeType: mimeType
+        mimeType: mimeType,
       });
 
       const chunks: Blob[] = [];
@@ -307,49 +418,67 @@ export default function VideoRecorder({
       };
 
       recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: mimeType });
-        console.log('Recording stopped, blob size:', blob.size, 'bytes, type:', blob.type);
+        // Ensure proper MIME type for .webm files
+        const properMimeType = mimeType.includes("webm")
+          ? "video/webm"
+          : mimeType;
+        const blob = new Blob(chunks, { type: properMimeType });
+        console.log(
+          "Recording stopped, blob size:",
+          blob.size,
+          "bytes, type:",
+          blob.type
+        );
 
         // Validate blob before proceeding
         if (blob.size === 0) {
-          console.error('Error: Recorded blob is empty');
+          console.error("Error: Recorded blob is empty");
           toast({
             title: "Recording Error",
-            description: "The recorded video appears to be empty. Please try recording again.",
+            description:
+              "The recorded video appears to be empty. Please try recording again.",
             variant: "destructive",
           });
           return;
         }
 
         // Check if blob type matches expected MIME type
-        if (blob.type !== mimeType && blob.type !== 'video/webm') {
-          console.warn('Blob type mismatch:', blob.type, 'expected:', mimeType);
+        if (blob.type !== mimeType && blob.type !== "video/webm") {
+          console.warn("Blob type mismatch:", blob.type, "expected:", mimeType);
         }
 
         // Try to validate the video by creating a temporary video element
         try {
-          const testVideo = document.createElement('video');
+          const testVideo = document.createElement("video");
           const testUrl = URL.createObjectURL(blob);
           testVideo.src = testUrl;
 
           await new Promise((resolve, reject) => {
             testVideo.onloadedmetadata = () => {
-              console.log('Video validation successful - duration:', testVideo.duration, 'dimensions:', testVideo.videoWidth, 'x', testVideo.videoHeight);
+              console.log(
+                "Video validation successful - duration:",
+                testVideo.duration,
+                "dimensions:",
+                testVideo.videoWidth,
+                "x",
+                testVideo.videoHeight
+              );
               URL.revokeObjectURL(testUrl);
               resolve(true);
             };
             testVideo.onerror = (e) => {
-              console.error('Video validation failed:', e);
+              console.error("Video validation failed:", e);
               URL.revokeObjectURL(testUrl);
-              reject(new Error('Video validation failed'));
+              reject(new Error("Video validation failed"));
             };
             testVideo.load();
           });
         } catch (validationError) {
-          console.error('Video validation error:', validationError);
+          console.error("Video validation error:", validationError);
           toast({
             title: "Video Validation Error",
-            description: "The recorded video appears to be corrupted. Please try recording again.",
+            description:
+              "The recorded video appears to be corrupted. Please try recording again.",
             variant: "destructive",
           });
           return;
@@ -368,7 +497,7 @@ export default function VideoRecorder({
         description: "Your interview session is now being recorded.",
       });
     } catch (error) {
-      console.error('Error starting recording:', error);
+      console.error("Error starting recording:", error);
       toast({
         title: "Recording Error",
         description: "Failed to start recording. Please try again.",
@@ -378,10 +507,10 @@ export default function VideoRecorder({
   };
 
   const stopRecording = () => {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
+    if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
       setMediaRecorder(null);
-      
+
       toast({
         title: "Recording Stopped",
         description: "Your answer has been recorded successfully.",
@@ -391,19 +520,22 @@ export default function VideoRecorder({
 
   const uploadVideo = async (blob: Blob) => {
     setIsUploading(true);
-    setUploadStatus('idle');
+    setUploadStatus("idle");
 
     const [, navigate] = useLocation();
 
     try {
       // Get current user session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
       if (sessionError || !session) {
         // User session is invalid, redirect to auth
-        localStorage.removeItem('supabase_token');
+        localStorage.removeItem("supabase_token");
         // Use React Router navigation instead of window.location
-        navigate('/auth');
+        navigate("/auth");
         throw new Error("Session expired. Please sign in again.");
       }
 
@@ -416,55 +548,68 @@ export default function VideoRecorder({
       // Convert blob to base64
       const reader = new FileReader();
       reader.readAsDataURL(blob);
-      
+
       return new Promise<string>((resolve, reject) => {
         reader.onload = async () => {
           try {
             const base64Data = reader.result as string;
-            const base64Content = base64Data.split(',')[1]; // Remove data:video/webm;base64, prefix
-            
+            const base64Content = base64Data.split(",")[1]; // Remove data:video/webm;base64, prefix
+
             // Determine API endpoint based on sessionId prop
-            const base = `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:5000'}`;
-            const apiUrl = sessionId ? `${base}/api/candidate/upload` : `${base}/api/candidate/session`;
+            const base = `${
+              (import.meta as any).env?.VITE_API_URL || "http://localhost:5000"
+            }`;
+            const apiUrl = sessionId
+              ? `${base}/api/candidate/upload`
+              : `${base}/api/candidate/session`;
             console.log(`Attempting to upload video to ${apiUrl}`);
 
             const formData = new FormData();
-            formData.append('video', blob, `interview_${Date.now()}.webm`);
-            formData.append('title', 'Interview Session');
+            formData.append("video", blob, `interview_${Date.now()}.webm`);
+            formData.append("title", "Interview Session");
             if (sessionId) {
-              formData.append('sessionId', sessionId);
+              formData.append("sessionId", sessionId);
             }
 
-            console.log('FormData created with blob size:', blob.size, 'type:', blob.type);
-            console.log('Blob MIME type:', blob.type);
-            console.log('Uploading to:', apiUrl);
+            console.log(
+              "FormData created with blob size:",
+              blob.size,
+              "type:",
+              blob.type
+            );
+            console.log("Blob MIME type:", blob.type);
+            console.log("Uploading to:", apiUrl);
 
             // Log blob details for debugging
-            console.log('Blob details:', {
+            console.log("Blob details:", {
               size: blob.size,
               type: blob.type,
-              lastModified: blob instanceof File ? blob.lastModified : 'N/A'
+              lastModified: blob instanceof File ? blob.lastModified : "N/A",
             });
 
-      const token = localStorage.getItem('supabase_token');
-      console.log('Token from localStorage:', token);
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: formData,
-      });
+            const token = localStorage.getItem("supabase_token");
+            console.log("Token from localStorage:", token);
+            const response = await fetch(apiUrl, {
+              method: "POST",
+              headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+              body: formData,
+            });
 
-            console.log('Upload response status:', response.status);
-            console.log('Upload response headers:', Object.fromEntries(response.headers.entries()));
+            console.log("Upload response status:", response.status);
+            console.log(
+              "Upload response headers:",
+              Object.fromEntries(response.headers.entries())
+            );
 
             if (!response.ok) {
               // Read the response body only once
-              let errorMessage = 'Upload failed';
+              let errorMessage = "Upload failed";
               try {
                 const errorData = await response.json();
-                errorMessage = errorData.error || errorData.message || 'Upload failed';
+                errorMessage =
+                  errorData.error || errorData.message || "Upload failed";
                 console.error("Upload error response:", errorData);
               } catch (parseError) {
                 console.error("Failed to parse error response:", parseError);
@@ -476,25 +621,29 @@ export default function VideoRecorder({
             const result = await response.json();
             console.log("Upload successful result:", result);
             setUploadedVideoUrl(result.url);
-            setUploadStatus('success');
-            
+            setUploadStatus("success");
+
             toast({
               title: "Video Uploaded",
-              description: "Your video has been successfully saved to the cloud.",
+              description:
+                "Your video has been successfully saved to the cloud.",
               variant: "default",
             });
-            
+
             resolve(result.url);
           } catch (error) {
-            console.error('Upload error:', error);
-            setUploadStatus('error');
-            
+            console.error("Upload error:", error);
+            setUploadStatus("error");
+
             toast({
               title: "Upload Failed",
-              description: error instanceof Error ? error.message : "Failed to upload video. Please try again.",
+              description:
+                error instanceof Error
+                  ? error.message
+                  : "Failed to upload video. Please try again.",
               variant: "destructive",
             });
-            
+
             reject(error);
           } finally {
             setIsUploading(false);
@@ -503,13 +652,13 @@ export default function VideoRecorder({
 
         reader.onerror = () => {
           setIsUploading(false);
-          setUploadStatus('error');
+          setUploadStatus("error");
           reject(new Error("Failed to read video file"));
         };
       });
     } catch (error) {
       setIsUploading(false);
-      setUploadStatus('error');
+      setUploadStatus("error");
       throw error;
     }
   };
@@ -523,7 +672,7 @@ export default function VideoRecorder({
   const toggleVideo = () => {
     if (mediaStream) {
       const videoTracks = mediaStream.getVideoTracks();
-      videoTracks.forEach(track => {
+      videoTracks.forEach((track) => {
         track.enabled = !isVideoEnabled;
       });
       setIsVideoEnabled(!isVideoEnabled);
@@ -533,7 +682,7 @@ export default function VideoRecorder({
   const toggleAudio = () => {
     if (mediaStream) {
       const audioTracks = mediaStream.getAudioTracks();
-      audioTracks.forEach(track => {
+      audioTracks.forEach((track) => {
         track.enabled = !isAudioEnabled;
       });
       setIsAudioEnabled(!isAudioEnabled);
@@ -547,7 +696,7 @@ export default function VideoRecorder({
 
   const cleanup = () => {
     if (mediaStream) {
-      mediaStream.getTracks().forEach(track => track.stop());
+      mediaStream.getTracks().forEach((track) => track.stop());
     }
     if (audioContextRef.current) {
       audioContextRef.current.close();
@@ -560,7 +709,7 @@ export default function VideoRecorder({
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -573,10 +722,12 @@ export default function VideoRecorder({
               ref={videoRef}
               autoPlay
               playsInline
+              muted
               className="w-full h-full object-cover"
               data-testid="video-preview"
+              style={{ transform: "scaleX(-1)" }} // Mirror effect for natural camera view
             />
-            
+
             {/* Recording Status Overlay */}
             {isRecording && (
               <div className="absolute top-4 left-4 flex items-center space-x-2 bg-red-600/90 backdrop-blur-sm rounded-full px-3 py-1">
@@ -585,9 +736,20 @@ export default function VideoRecorder({
               </div>
             )}
 
+            {/* Video Status Indicator */}
+            {mediaStream && (
+              <div className="absolute top-4 right-20 flex items-center space-x-2 bg-green-600/90 backdrop-blur-sm rounded-full px-3 py-1">
+                <div className="w-2 h-2 bg-white rounded-full"></div>
+                <span className="text-white text-xs font-medium">LIVE</span>
+              </div>
+            )}
+
             {/* Timer Overlay */}
             <div className="absolute top-4 right-4 bg-black/80 backdrop-blur-sm rounded-lg px-3 py-1">
-              <span className="text-white font-mono text-sm" data-testid="video-timer">
+              <span
+                className="text-white font-mono text-sm"
+                data-testid="video-timer"
+              >
                 {formatTime(timer)}
               </span>
             </div>
@@ -596,7 +758,8 @@ export default function VideoRecorder({
             {availableDevices.length > 0 && (
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/80 backdrop-blur-sm rounded-lg px-3 py-1">
                 <span className="text-white text-xs">
-                  {availableDevices.length} camera{availableDevices.length !== 1 ? 's' : ''} detected
+                  {availableDevices.length} camera
+                  {availableDevices.length !== 1 ? "s" : ""} detected
                 </span>
               </div>
             )}
@@ -604,11 +767,13 @@ export default function VideoRecorder({
             {/* Real-time AI Feedback Overlay */}
             <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg p-3 max-w-xs">
               <div className="flex items-center space-x-2 mb-2">
-                <div className={`w-2 h-2 rounded-full animate-pulse ${
-                  isRecording ? 'bg-green-500' : 'bg-gray-400'
-                }`}></div>
+                <div
+                  className={`w-2 h-2 rounded-full animate-pulse ${
+                    isRecording ? "bg-green-500" : "bg-gray-400"
+                  }`}
+                ></div>
                 <span className="text-sm font-medium text-gray-800">
-                  {isRecording ? 'AI Analysis' : 'Ready'}
+                  {isRecording ? "AI Analysis" : "Ready"}
                 </span>
               </div>
               <div className="space-y-1">
@@ -624,19 +789,25 @@ export default function VideoRecorder({
                   <span className="text-gray-600">Volume Level</span>
                   <div className="flex items-center space-x-1">
                     <div className="w-8 bg-gray-200 rounded-full h-1">
-                      <div 
+                      <div
                         className="bg-primary h-1 rounded-full transition-all duration-100"
                         style={{ width: `${volumeLevel}%` }}
                       ></div>
                     </div>
-                    <span className={`text-xs font-medium ${
-                      volumeLevel < 20 ? 'text-red-600' : 
-                      volumeLevel > 80 ? 'text-yellow-600' : 
-                      'text-green-600'
-                    }`}>
-                      {volumeLevel < 20 ? 'Low' : 
-                       volumeLevel > 80 ? 'High' : 
-                       'Good'}
+                    <span
+                      className={`text-xs font-medium ${
+                        volumeLevel < 20
+                          ? "text-red-600"
+                          : volumeLevel > 80
+                          ? "text-yellow-600"
+                          : "text-green-600"
+                      }`}
+                    >
+                      {volumeLevel < 20
+                        ? "Low"
+                        : volumeLevel > 80
+                        ? "High"
+                        : "Good"}
                     </span>
                   </div>
                 </div>
@@ -650,20 +821,32 @@ export default function VideoRecorder({
                   variant="ghost"
                   size="sm"
                   onClick={toggleVideo}
-                  className={`text-white hover:bg-white/20 ${!isVideoEnabled ? 'bg-red-600' : ''}`}
+                  className={`text-white hover:bg-white/20 ${
+                    !isVideoEnabled ? "bg-red-600" : ""
+                  }`}
                   data-testid="button-toggle-video"
                 >
-                  {isVideoEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                  {isVideoEnabled ? (
+                    <Video className="h-4 w-4" />
+                  ) : (
+                    <VideoOff className="h-4 w-4" />
+                  )}
                 </Button>
 
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={toggleAudio}
-                  className={`text-white hover:bg-white/20 ${!isAudioEnabled ? 'bg-red-600' : ''}`}
+                  className={`text-white hover:bg-white/20 ${
+                    !isAudioEnabled ? "bg-red-600" : ""
+                  }`}
                   data-testid="button-toggle-audio"
                 >
-                  {isAudioEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  {isAudioEnabled ? (
+                    <Mic className="h-4 w-4" />
+                  ) : (
+                    <MicOff className="h-4 w-4" />
+                  )}
                 </Button>
 
                 {!isRecording ? (
@@ -714,22 +897,88 @@ export default function VideoRecorder({
               {isInitializing ? (
                 <>
                   <div className="animate-spin w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                  <p className="text-white text-lg mb-2">Initializing camera...</p>
-                  <p className="text-gray-300 text-sm">Please allow camera and microphone access</p>
+                  <p className="text-white text-lg mb-2">
+                    Initializing camera...
+                  </p>
+                  <p className="text-gray-300 text-sm">
+                    Please allow camera and microphone access
+                  </p>
+                  <p className="text-gray-400 text-xs mt-2">
+                    Make sure DroidCam is running on your Android device
+                  </p>
+                  <div className="mt-4 p-2 bg-black/50 rounded text-xs text-gray-300">
+                    <p>Check browser console (F12) for detailed logs</p>
+                  </div>
                 </>
               ) : (
                 <>
                   <Video className="text-white h-16 w-16 mx-auto mb-4" />
-                  <p className="text-white text-lg mb-2">Camera not available</p>
-                  <p className="text-gray-300 text-sm mb-4">Please check DroidCam connection</p>
-                  <Button
-                    onClick={retryCamera}
-                    variant="outline"
-                    className="text-white border-white hover:bg-white hover:text-gray-900"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Retry Camera
-                  </Button>
+                  <p className="text-white text-lg mb-2">
+                    Camera not available
+                  </p>
+                  <p className="text-gray-300 text-sm mb-4">
+                    Please check DroidCam connection and permissions
+                  </p>
+                  <div className="space-y-2">
+                    <Button
+                      onClick={retryCamera}
+                      variant="outline"
+                      className="text-white border-white hover:bg-white hover:text-gray-900 mr-2"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry Camera
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        console.log("🔍 DEBUG INFO:");
+                        console.log("Available devices:", availableDevices);
+                        console.log("Media stream:", mediaStream);
+                        console.log("Video ref:", videoRef.current);
+                        if (videoRef.current) {
+                          console.log(
+                            "Video readyState:",
+                            videoRef.current.readyState
+                          );
+                          console.log("Video error:", videoRef.current.error);
+                          console.log(
+                            "Video networkState:",
+                            videoRef.current.networkState
+                          );
+                          console.log(
+                            "Video srcObject:",
+                            videoRef.current.srcObject
+                          );
+                          console.log(
+                            "Video dimensions:",
+                            videoRef.current.videoWidth,
+                            "x",
+                            videoRef.current.videoHeight
+                          );
+                        }
+                        if (
+                          mediaStream &&
+                          typeof mediaStream.getTracks === "function"
+                        ) {
+                          console.log(
+                            "Stream tracks:",
+                            mediaStream
+                              .getTracks()
+                              .map((track: MediaStreamTrack) => ({
+                                kind: track.kind,
+                                enabled: track.enabled,
+                                readyState: track.readyState,
+                                label: track.label,
+                              }))
+                          );
+                        }
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="text-gray-300 border-gray-600 hover:bg-gray-700"
+                    >
+                      Debug Info
+                    </Button>
+                  </div>
                 </>
               )}
             </div>
@@ -750,16 +999,18 @@ export default function VideoRecorder({
               <span className="text-sm font-medium">Camera</span>
             </div>
             <Badge variant={isVideoEnabled ? "default" : "destructive"}>
-              {isVideoEnabled ? 'Active' : 'Disabled'}
+              {isVideoEnabled ? "Active" : "Disabled"}
             </Badge>
             {availableDevices.length > 1 && (
               <div className="mt-2">
-                <select 
+                <select
                   className="text-xs border rounded px-2 py-1 w-full"
                   onChange={(e) => {
-                    const device = availableDevices.find(d => d.deviceId === e.target.value);
+                    const device = availableDevices.find(
+                      (d) => d.deviceId === e.target.value
+                    );
                     if (device) {
-                      console.log('Switching to device:', device.label);
+                      console.log("Switching to device:", device.label);
                       // Reinitialize with specific device
                       cleanup();
                       initializeMedia();
@@ -768,7 +1019,8 @@ export default function VideoRecorder({
                 >
                   {availableDevices.map((device) => (
                     <option key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Camera ${device.deviceId.slice(0, 8)}...`}
+                      {device.label ||
+                        `Camera ${device.deviceId.slice(0, 8)}...`}
                     </option>
                   ))}
                 </select>
@@ -788,7 +1040,7 @@ export default function VideoRecorder({
               <span className="text-sm font-medium">Microphone</span>
             </div>
             <Badge variant={isAudioEnabled ? "default" : "destructive"}>
-              {isAudioEnabled ? 'Active' : 'Disabled'}
+              {isAudioEnabled ? "Active" : "Disabled"}
             </Badge>
           </CardContent>
         </Card>
@@ -798,20 +1050,22 @@ export default function VideoRecorder({
         <Card className="bg-green-50 border-green-200">
           <CardContent className="p-4 text-center">
             <div className="flex items-center justify-center space-x-2 mb-2">
-              <Badge className="bg-green-600 text-white">Recording Complete</Badge>
+              <Badge className="bg-green-600 text-white">
+                Recording Complete
+              </Badge>
               {isUploading && (
                 <div className="flex items-center space-x-2 ml-2">
                   <div className="animate-spin w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full"></div>
                   <span className="text-sm text-green-700">Uploading...</span>
                 </div>
               )}
-              {uploadStatus === 'success' && (
+              {uploadStatus === "success" && (
                 <div className="flex items-center space-x-2 ml-2">
                   <CheckCircle className="h-4 w-4 text-green-600" />
                   <span className="text-sm text-green-700">Uploaded</span>
                 </div>
               )}
-              {uploadStatus === 'error' && (
+              {uploadStatus === "error" && (
                 <div className="flex items-center space-x-2 ml-2">
                   <XCircle className="h-4 w-4 text-red-600" />
                   <span className="text-sm text-red-700">Upload Failed</span>
@@ -819,14 +1073,15 @@ export default function VideoRecorder({
               )}
             </div>
             <p className="text-sm text-green-700 mb-2">
-              Your answer has been recorded. {uploadStatus === 'success' && 'Video saved to cloud storage.'}
+              Your answer has been recorded.{" "}
+              {uploadStatus === "success" && "Video saved to cloud storage."}
             </p>
             {uploadedVideoUrl && (
               <div className="mt-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => window.open(uploadedVideoUrl, '_blank')}
+                  onClick={() => window.open(uploadedVideoUrl, "_blank")}
                   className="text-xs"
                 >
                   <Upload className="h-3 w-3 mr-1" />
