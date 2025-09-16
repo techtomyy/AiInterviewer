@@ -101,7 +101,17 @@ CREATE POLICY "Users can update their own videos" ON storage.objects
     FOR UPDATE USING (bucket_id = 'interview-videos' AND auth.uid() IS NOT NULL);
 
 CREATE POLICY "Users can delete their own videos" ON storage.objects
-    FOR DELETE USING (bucket_id = 'interview-videos' AND auth.uid() IS NOT NULL);
+    FOR DELETE USING (
+        bucket_id = 'interview-videos' AND
+        auth.uid() IS NOT NULL AND
+        -- Only allow deleting files in user's own folder (email folder)
+        -- The path format is: raw/{user_email}/... or converted/{user_email}/...
+        (
+            -- Check if the path starts with raw/ or converted/ followed by the user's email
+            (starts_with(name, 'raw/' || auth.email() || '/')) OR
+            (starts_with(name, 'converted/' || auth.email() || '/'))
+        )
+    );
 
 -- Note: Video conversion is now handled by the backend API calling the Edge Function directly
 -- after file upload, rather than using database triggers.

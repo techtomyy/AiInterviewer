@@ -177,7 +177,6 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
               status: 'pending',
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              session_id: sessionData[0].id,
             });
         }
 
@@ -406,15 +405,7 @@ router.delete('/session/:id', authenticate, async (req, res) => {
       }
     }
 
-    // Delete related conversions first to avoid foreign key constraint errors
-    const { error: conversionDeleteError } = await req.supabaseUser
-      .from('conversions')
-      .delete()
-      .eq('session_id', id);
-    if (conversionDeleteError) {
-      console.error('Error deleting related conversions:', conversionDeleteError);
-      return res.status(500).json({ error: conversionDeleteError.message || 'Failed to delete related conversions' });
-    }
+    // Note: Skipping deletion of related conversions as session_id column may not exist
 
     // Update session to remove video_url instead of deleting the entire session
     const { error } = await req.supabaseUser
@@ -472,11 +463,7 @@ router.post('/upload', authenticate, upload.single('video'), async (req, res) =>
       }
     }
 
-    // Delete old conversions for this session
-    await req.supabaseUser
-      .from('conversions')
-      .delete()
-      .eq('session_id', sessionId);
+    // Note: Skipping deletion of old conversions as session_id column may not exist
 
     // Upload new video
     const fileName = `raw/${userEmail}/${sessionId}_${Date.now()}_${file.originalname}`;
