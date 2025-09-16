@@ -23,6 +23,14 @@ CREATE TABLE IF NOT EXISTS interview_sessions (
     FOREIGN KEY (user_email) REFERENCES users(email) ON DELETE CASCADE
 );
 
+-- Add updated_at column if it doesn't exist (for existing tables)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interview_sessions' AND column_name = 'updated_at') THEN
+        ALTER TABLE interview_sessions ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    END IF;
+END $$;
+
 -- Conversions table to track video conversion status
 CREATE TABLE IF NOT EXISTS conversions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -69,7 +77,7 @@ CREATE POLICY "Users can delete their own sessions" ON interview_sessions
 -- RLS Policies for conversions table (allow all authenticated users to read, but restrict writes)
 DROP POLICY IF EXISTS "Authenticated users can view conversions" ON conversions;
 CREATE POLICY "Authenticated users can view conversions" ON conversions
-    FOR SELECT USING (auth.role() = 'authenticated');
+    FOR SELECT USING (auth.uid() IS NOT NULL);
 
 -- Storage bucket policies for interview-videos
 -- Make sure the bucket is public for video access
@@ -84,16 +92,16 @@ DROP POLICY IF EXISTS "Users can update their own videos" ON storage.objects;
 DROP POLICY IF EXISTS "Users can delete their own videos" ON storage.objects;
 
 CREATE POLICY "Users can upload their own videos" ON storage.objects
-    FOR INSERT WITH CHECK (bucket_id = 'interview-videos' AND auth.role() = 'authenticated');
+    FOR INSERT WITH CHECK (bucket_id = 'interview-videos' AND auth.uid() IS NOT NULL);
 
 CREATE POLICY "Users can view videos" ON storage.objects
     FOR SELECT USING (bucket_id = 'interview-videos');
 
 CREATE POLICY "Users can update their own videos" ON storage.objects
-    FOR UPDATE USING (bucket_id = 'interview-videos' AND auth.role() = 'authenticated');
+    FOR UPDATE USING (bucket_id = 'interview-videos' AND auth.uid() IS NOT NULL);
 
 CREATE POLICY "Users can delete their own videos" ON storage.objects
-    FOR DELETE USING (bucket_id = 'interview-videos' AND auth.role() = 'authenticated');
+    FOR DELETE USING (bucket_id = 'interview-videos' AND auth.uid() IS NOT NULL);
 
 -- Note: Video conversion is now handled by the backend API calling the Edge Function directly
 -- after file upload, rather than using database triggers.

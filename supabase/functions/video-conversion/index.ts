@@ -11,16 +11,27 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Parse the request body once to avoid issues in catch block
+  let record;
+  try {
+    const body = await req.json();
+    record = body.record;
+  } catch (parseError) {
+    console.error('Failed to parse request body:', parseError);
+    return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    });
+  }
+
+  const { name: fileName, bucket_id: bucketId } = record;
+
   try {
     // Initialize Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
-
-    // Get the request body (storage event)
-    const { record } = await req.json()
-    const { name: fileName, bucket_id: bucketId } = record
 
     console.log('Processing file:', fileName, 'in bucket:', bucketId)
 
@@ -101,7 +112,7 @@ serve(async (req) => {
         .from('interview_sessions')
         .update({
           video_url: urlData.publicUrl,
-          status: 'uploaded',
+          status: 'completed',
           updated_at: new Date().toISOString()
         })
         .eq('id', sessionId)
@@ -133,14 +144,11 @@ serve(async (req) => {
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
       )
 
-      const { record } = await req.json()
-      const { name: fileName } = record
-
       await supabaseClient
         .from('conversions')
         .update({
           status: 'failed',
-          error_message: error.message,
+          error_message: (error as Error).message,
           updated_at: new Date().toISOString()
         })
         .eq('filename', fileName)
@@ -149,7 +157,7 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({
-      error: error.message
+      error: (error as Error).message
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

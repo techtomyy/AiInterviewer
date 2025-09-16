@@ -162,6 +162,25 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
     // Start video conversion process
     const convertVideo = async (userClient) => {
       try {
+        // Insert conversion record if not exists
+        const { data: existingConversion } = await userClient
+          .from('conversions')
+          .select('*')
+          .eq('filename', fileName)
+          .single();
+
+        if (!existingConversion) {
+          await userClient
+            .from('conversions')
+            .insert({
+              filename: fileName,
+              status: 'pending',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              session_id: sessionData[0].id,
+            });
+        }
+
         // Update conversion status to converting
         await userClient
           .from('conversions')
@@ -276,6 +295,33 @@ router.post('/session', authenticate, upload.single('video'), async (req, res) =
   }
 });
 
+// ---------------- Get session by ID ----------------
+router.get('/session/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: session, error: fetchError } = await req.supabaseUser
+      .from('interview_sessions')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !session) {
+      console.error(`Session not found or fetch error. User: ${req.user.email}, Session ID: ${id}, FetchError:`, fetchError);
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (session.user_email !== req.user.email) {
+      console.error(`Unauthorized access attempt. User: ${req.user.email}, Session owner: ${session.user_email}`);
+      return res.status(403).json({ error: 'Unauthorized to access this session' });
+    }
+
+    res.json(session);
+  } catch (error) {
+    console.error('Unexpected error in get session endpoint:', error);
+    res.status(500).json({ error: error.message || 'Unexpected error occurred' });
+  }
+});
+
 // ---------------- Get session status ----------------
 router.get('/session/:id/status', authenticate, async (req, res) => {
   const { id } = req.params;
@@ -310,35 +356,88 @@ router.get('/conversions', authenticate, async (req, res) => {
   }
 });
 
-// ---------------- Delete session ----------------
 router.delete('/session/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const { data: session, error: fetchError } = await supabase
+    const { data: session, error: fetchError } = await req.supabaseUser
       .from('interview_sessions')
       .select('*')
       .eq('id', id)
-      .eq('user_email', req.user.email)
       .single();
 
-    if (fetchError || !session) return res.status(404).json({ error: 'Session not found' });
+    if (fetchError || !session) {
+      console.error(`Session not found or fetch error. User: ${req.user.email}, Session ID: ${id}, FetchError:`, fetchError);
+      return res.status(404).json({ error: 'Session not found' });
+    }
 
-    const fileName = session.video_url.split('/').pop();
-    await supabaseAdmin.storage.from('interview-videos').remove([fileName]);
+    if (session.user_email !== req.user.email) {
+      console.error(`Unauthorized delete attempt. User: ${req.user.email}, Session owner: ${session.user_email}`);
+      return res.status(403).json({ error: 'Unauthorized to delete this session' });
+    }
 
-    const { error } = await supabase
-      .from('interview_sessions')
+    // Delete video files from storage (both raw and converted)
+    if (session.video_url) {
+      try {
+        const url = new URL(session.video_url);
+        // Fix: Remove leading slash from pathname to get correct file path
+        const convertedFilePath = url.pathname.replace(/^\/?interview-videos\//, '');
+        console.log(`Attempting to delete converted video file from storage: ${convertedFilePath}`);
+
+        // Also delete the raw file by replacing 'converted/' with 'raw/' and '.mp4' with '.webm'
+        const rawFilePath = convertedFilePath.replace('converted/', 'raw/').replace('.mp4', '.webm');
+        console.log(`Attempting to delete raw video file from storage: ${rawFilePath}`);
+
+        const filesToDelete = [convertedFilePath, rawFilePath];
+        const { error: storageDeleteError } = await supabaseAdmin.storage.from('interview-videos').remove(filesToDelete);
+        if (storageDeleteError) {
+          console.error('Storage deletion error:', storageDeleteError);
+          // Log error but do not fail deletion for missing or inaccessible files
+          if (storageDeleteError.message && storageDeleteError.message.includes('The resource was not found')) {
+            console.warn('Some video files not found in storage, continuing deletion');
+          } else {
+            console.warn('Failed to delete some video files from storage:', storageDeleteError);
+          }
+        } else {
+          console.log('Video files deleted from storage successfully');
+        }
+      } catch (storageError) {
+        console.warn('Failed to delete video files from storage:', storageError);
+        // Do not fail deletion for exceptions during storage deletion
+      }
+    }
+
+    // Delete related conversions first to avoid foreign key constraint errors
+    const { error: conversionDeleteError } = await req.supabaseUser
+      .from('conversions')
       .delete()
-      .eq('id', id);
-    if (error) throw error;
+      .eq('session_id', id);
+    if (conversionDeleteError) {
+      console.error('Error deleting related conversions:', conversionDeleteError);
+      return res.status(500).json({ error: conversionDeleteError.message || 'Failed to delete related conversions' });
+    }
 
-    res.json({ message: 'Session deleted' });
+    // Update session to remove video_url instead of deleting the entire session
+    const { error } = await req.supabaseUser
+      .from('interview_sessions')
+      .update({
+        video_url: null,
+        status: 'created', // Reset status since video is removed
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id);
+    if (error) {
+      console.error('Error updating session in database:', error);
+      return res.status(500).json({ error: error.message || 'Failed to update session in database', details: error });
+    }
+
+    res.json({ message: 'Video deleted successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Unexpected error in delete session endpoint:', error);
+    res.status(500).json({ error: error.message || 'Unexpected error occurred' });
   }
 });
 
-// ---------------- Upload video for existing session ----------------
+// ---------------- Upload video for existing session (Retake) ----------------
 router.post('/upload', authenticate, upload.single('video'), async (req, res) => {
   try {
     const { sessionId } = req.body;
@@ -347,16 +446,41 @@ router.post('/upload', authenticate, upload.single('video'), async (req, res) =>
 
     if (!file || !sessionId) return res.status(400).json({ error: 'Video file and sessionId required' });
 
-    const { data: session, error: fetchError } = await supabase
+    // Fetch session using user-specific client
+    const { data: session, error: fetchError } = await req.supabaseUser
       .from('interview_sessions')
       .select('*')
       .eq('id', sessionId)
-      .eq('user_email', userEmail)
       .single();
 
     if (fetchError || !session) return res.status(404).json({ error: 'Session not found' });
 
-    const fileName = `raw/${userEmail}/${sessionId}_${file.originalname}`;
+    if (session.user_email !== userEmail) return res.status(403).json({ error: 'Unauthorized' });
+
+    // Delete old video from storage if exists
+    if (session.video_url) {
+      try {
+        const url = new URL(session.video_url);
+        const oldFilePath = url.pathname.replace(/^\/?interview-videos\//, '');
+        console.log(`Deleting old video file: ${oldFilePath}`);
+        const { error: deleteError } = await supabaseAdmin.storage.from('interview-videos').remove([oldFilePath]);
+        if (deleteError) {
+          console.warn('Failed to delete old video file:', deleteError);
+        }
+      } catch (deleteError) {
+        console.warn('Error deleting old video:', deleteError);
+      }
+    }
+
+    // Delete old conversions for this session
+    await req.supabaseUser
+      .from('conversions')
+      .delete()
+      .eq('session_id', sessionId);
+
+    // Upload new video
+    const fileName = `raw/${userEmail}/${sessionId}_${Date.now()}_${file.originalname}`;
+    console.log('Uploading new video:', fileName);
     const { error: uploadError } = await supabaseAdmin.storage
       .from('interview-videos')
       .upload(fileName, file.buffer, {
@@ -364,18 +488,146 @@ router.post('/upload', authenticate, upload.single('video'), async (req, res) =>
       });
     if (uploadError) throw uploadError;
 
+    // Get public URL
     const { data: urlData } = supabaseAdmin.storage
       .from('interview-videos')
       .getPublicUrl(fileName);
 
-    const { error: updateError } = await supabase
+    // Update session with new video URL and reset status
+    const { error: updateError } = await req.supabaseUser
       .from('interview_sessions')
-      .update({ video_url: urlData.publicUrl })
+      .update({
+        video_url: urlData.publicUrl,
+        status: 'processing',
+        updated_at: new Date().toISOString()
+      })
       .eq('id', sessionId);
     if (updateError) throw updateError;
 
-    res.json({ message: 'Video uploaded', video_url: urlData.publicUrl });
+    // Start video conversion process for retake
+    const convertVideo = async (userClient) => {
+      try {
+        // Insert conversion record
+        await userClient
+          .from('conversions')
+          .insert({
+            filename: fileName,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            session_id: sessionId,
+          });
+
+        // Update conversion status to converting
+        await userClient
+          .from('conversions')
+          .update({ status: 'converting', updated_at: new Date().toISOString() })
+          .eq('filename', fileName);
+
+        // Create temporary files
+        const tempDir = os.tmpdir();
+        const inputPath = path.join(tempDir, `input_${Date.now()}.webm`);
+        const outputPath = path.join(tempDir, `output_${Date.now()}.mp4`);
+
+        // Download the webm file
+        const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+          .from('interview-videos')
+          .download(fileName);
+
+        if (downloadError || !fileData) {
+          throw new Error(`Failed to download file: ${downloadError?.message}`);
+        }
+
+        // Write to temporary file
+        fs.writeFileSync(inputPath, Buffer.from(await fileData.arrayBuffer()));
+
+        // Convert to MP4
+        await convertVideoToMp4(inputPath, outputPath);
+
+        // Read converted file
+        const convertedBuffer = fs.readFileSync(outputPath);
+
+        // Upload converted MP4
+        const mp4FileName = fileName.replace('raw/', 'converted/').replace('.webm', '.mp4');
+        const { error: uploadMp4Error } = await supabaseAdmin.storage
+          .from('interview-videos')
+          .upload(mp4FileName, convertedBuffer, {
+            contentType: 'video/mp4',
+            upsert: true
+          });
+
+        if (uploadMp4Error) {
+          throw new Error(`Failed to upload MP4: ${uploadMp4Error.message}`);
+        }
+
+        // Get MP4 public URL
+        const { data: mp4UrlData } = supabaseAdmin.storage
+          .from('interview-videos')
+          .getPublicUrl(mp4FileName);
+
+        // Update conversion record
+        await userClient
+          .from('conversions')
+          .update({
+            status: 'completed',
+            converted_url: mp4UrlData.publicUrl,
+            updated_at: new Date().toISOString()
+          })
+          .eq('filename', fileName);
+
+        // Update session with MP4 URL
+        await userClient
+          .from('interview_sessions')
+          .update({
+            video_url: mp4UrlData.publicUrl,
+            status: 'completed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', sessionId);
+
+        // Clean up temporary files
+        try {
+          fs.unlinkSync(inputPath);
+          fs.unlinkSync(outputPath);
+        } catch (cleanupError) {
+          console.warn('Failed to clean up temporary files:', cleanupError);
+        }
+
+        console.log('Video conversion completed successfully for retake');
+      } catch (conversionError) {
+        console.error('Video conversion failed for retake:', conversionError);
+
+        // Update conversion status to failed
+        await userClient
+          .from('conversions')
+          .update({
+            status: 'failed',
+            error_message: conversionError.message,
+            updated_at: new Date().toISOString()
+          })
+          .eq('filename', fileName);
+
+        // Update session status to failed
+        await userClient
+          .from('interview_sessions')
+          .update({
+            status: 'failed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', sessionId);
+      }
+    };
+
+    // Start conversion asynchronously
+    convertVideo(req.supabaseUser);
+
+    res.json({
+      message: 'Video uploaded for retake - conversion in progress',
+      video_url: urlData.publicUrl,
+      conversion_status: 'queued'
+    });
   } catch (error) {
+    console.error('Upload error:', error);
     res.status(500).json({ error: error.message });
   }
 });

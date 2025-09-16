@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [openVideoUrl, setOpenVideoUrl] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // 📊 Fetch sessions using email fallback, in case local user_id mapping differs
   const {
@@ -142,21 +144,25 @@ export default function Dashboard({ user }: DashboardProps) {
     navigate("/auth");
   }
 
-  // 🗑️ Delete session
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [sessionToDelete, setSessionToDelete] = React.useState<string | null>(
+    null
+  );
+
+  // 🗑️ Delete session with custom confirmation dialog
   async function handleDeleteSession(sessionId: string) {
-    if (
-      !confirm(
-        "Are you sure you want to delete this interview session? This action cannot be undone."
-      )
-    ) {
-      return;
-    }
+    setSessionToDelete(sessionId);
+    setDeleteDialogOpen(true);
+  }
+
+  async function confirmDeleteSession() {
+    if (!sessionToDelete) return;
 
     try {
       const base = `${
         (import.meta as any).env?.VITE_API_URL || "http://localhost:5000"
       }`;
-      const apiUrl = `${base}/api/candidate/session/${sessionId}`;
+      const apiUrl = `${base}/api/candidate/session/${sessionToDelete}`;
       const token = localStorage.getItem("supabase_token");
 
       const response = await fetch(apiUrl, {
@@ -167,22 +173,43 @@ export default function Dashboard({ user }: DashboardProps) {
       });
 
       if (!response.ok) {
+        // If deletion fails with 404 (session not found), show error
+        if (response.status === 404) {
+          toast({
+            title: "Session not found",
+            description: "The session was not found on the server.",
+            variant: "destructive",
+          });
+          return;
+        }
         throw new Error(`HTTP ${response.status}`);
       }
 
       toast({
-        title: "Session deleted",
-        description: "The interview session has been successfully deleted.",
+        title: "Video deleted",
+        description: "The video has been successfully deleted from this session.",
       });
 
-      // Refresh the sessions list
+      // Immediately update the cached sessions data to remove video_url from the session
+      queryClient.setQueryData(["/api/sessions", user?.id, user?.email], (oldData: any[]) => {
+        return oldData ? oldData.map((session) =>
+          session.id === sessionToDelete
+            ? { ...session, video_url: null, status: 'created' }
+            : session
+        ) : [];
+      });
+
+      // Refresh the sessions list in the background
       refetch();
     } catch (error) {
       toast({
         title: "Delete failed",
-        description: "Failed to delete the session. Please try again.",
+        description: "Failed to delete the video. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setDeleteDialogOpen(false);
+      setSessionToDelete(null);
     }
   }
 
@@ -212,20 +239,35 @@ export default function Dashboard({ user }: DashboardProps) {
   const getConversionStatus = (session: any) => {
     if (!session?.video_url) return null;
 
-    // Extract filename from video URL - look for .webm files in raw folder
-    const urlParts = session.video_url.split("/");
-    const fileName = urlParts[urlParts.length - 1];
+    // Extract filename from video_url or store original raw filename in session.raw_filename
+    // Try to find conversion record by matching filename or original filename
+    // The conversion filename is the raw webm filename
 
-    // For raw .webm files, find conversion record
-    if (fileName.includes(".webm")) {
-      const conversion = conversions.find((c: any) => c.filename === fileName);
-      return conversion;
+    // Extract filename from session.video_url
+    const urlParts = session.video_url.split("/");
+    const currentFileName = urlParts[urlParts.length - 1];
+
+    // Try to find conversion record by matching filename or original filename
+    let conversion = conversions.find((c: any) => c.filename === currentFileName);
+
+    // If not found and session has raw_filename, try matching that
+    if (!conversion && session.raw_filename) {
+      conversion = conversions.find((c: any) => c.filename === session.raw_filename);
     }
 
-    return null;
+    // If still not found and currentFileName is mp4, try replacing 'converted' with 'raw' and .mp4 with .webm
+    if (!conversion && currentFileName.endsWith(".mp4")) {
+      const rawFileName = currentFileName.replace("converted/", "raw/").replace(".mp4", ".webm");
+      conversion = conversions.find((c: any) => c.filename === rawFileName);
+    }
+
+    return conversion || null;
   };
 
-  const sessions = sessionsData ?? []; // ✅ always an array
+  // Filter out sessions with IDs 58 and 70 as requested by user
+  const sessions = (sessionsData ?? []).filter(
+    (session) => session.id !== 58 && session.id !== 70
+  );
 
   // 🔢 Stats
   const completedSessions = sessions.filter(
@@ -378,6 +420,29 @@ export default function Dashboard({ user }: DashboardProps) {
           </div>
         </div>
       </header>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Delete Video</DialogTitle>
+          </DialogHeader>
+          <p className="mb-4">
+            Are you sure you want to delete the video from this interview session? The session will remain but the video will be permanently removed. This action cannot be undone.
+          </p>
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteSession}>
+              Delete Video
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 📊 Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
