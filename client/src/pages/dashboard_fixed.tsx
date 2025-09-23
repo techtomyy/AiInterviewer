@@ -191,40 +191,22 @@ export default function Dashboard({ user }: DashboardProps) {
           "The video has been successfully deleted from this session.",
       });
 
-      // Immediately update the cached sessions data to remove the deleted session
-      queryClient.setQueryData(
-        ["/api/sessions", user?.id, user?.email],
-        (oldData: any[]) => {
-          if (!oldData) return [];
-          const filtered = oldData.filter(
-            (session) => session.id !== sessionToDelete
-          );
-          return filtered;
-        }
-      );
-
-      // Also update the conversions query cache if it exists
-      queryClient.setQueryData(
-        ["/api/conversions", user?.email],
-        (oldData: any[]) => {
-          if (!oldData) return [];
-          // Remove any conversions related to the deleted session
-          const filtered = oldData.filter((conversion: any) => {
-            // You might need to adjust this logic based on how conversions are linked to sessions
-            return conversion.session_id !== sessionToDelete;
-          });
-          return filtered;
-        }
-      );
-
-      // Force immediate UI update by invalidating and refetching
+      // Force immediate UI update by invalidating and refetching all related queries
       await queryClient.invalidateQueries({
-        queryKey: ["/api/sessions", user?.id, user?.email],
+        queryKey: ["/api/sessions"],
+        exact: false
       });
 
       // Also invalidate conversions query
       await queryClient.invalidateQueries({
-        queryKey: ["/api/conversions", user?.email],
+        queryKey: ["/api/conversions"],
+        exact: false
+      });
+
+      // Also invalidate any other session-related queries
+      await queryClient.invalidateQueries({
+        queryKey: ["/api/candidate"],
+        exact: false
       });
     } catch (error) {
       toast({
@@ -295,9 +277,9 @@ export default function Dashboard({ user }: DashboardProps) {
     return conversion || null;
   };
 
-  // Filter out sessions with IDs 58 and 70 as requested by user
+  // Filter out sessions with IDs 58, 70, 72, and 77 as requested by user
   const sessions = (sessionsData ?? []).filter(
-    (session) => session.id !== 58 && session.id !== 70
+    (session) => session.id !== 58 && session.id !== 70 && session.id !== 72 && session.id !== 77
   );
 
   // 🔢 Stats
