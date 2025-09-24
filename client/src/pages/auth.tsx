@@ -31,7 +31,7 @@ export default function AuthPage() {
     }
 
     setLoading(true);
-    
+
     if (isSignUp) {
       const { error } = await supabase.auth.signUp({
         email,
@@ -40,7 +40,7 @@ export default function AuthPage() {
           emailRedirectTo: "http://localhost:5173/auth-callback",
         },
       });
-      
+
       if (error) {
         toast({
           title: "Signup Failed",
@@ -50,7 +50,8 @@ export default function AuthPage() {
       } else {
         toast({
           title: "Account Created Successfully! 🎉",
-          description: "Please check your email to confirm your account and get started.",
+          description:
+            "Please check your email to confirm your account and get started.",
         });
         // Clear form after successful signup
         setEmail("");
@@ -61,7 +62,7 @@ export default function AuthPage() {
         email,
         password,
       });
-      
+
       if (error) {
         toast({
           title: "Login Failed",
@@ -72,7 +73,7 @@ export default function AuthPage() {
         // Store the access token for API calls
         const token = data.session?.access_token;
         if (token) {
-          localStorage.setItem('supabase_token', token);
+          localStorage.setItem("supabase_token", token);
         }
         toast({
           title: "Welcome Back! 👋",
@@ -83,7 +84,7 @@ export default function AuthPage() {
         }, 1500);
       }
     }
-    
+
     setLoading(false);
   }
 
@@ -108,7 +109,7 @@ export default function AuthPage() {
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleAuth();
     }
   };
@@ -125,17 +126,11 @@ export default function AuthPage() {
           muted
           playsInline
         />
-        <div className="absolute inset-0 bg-black/40" />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center text-white">
-            <h1 className="text-4xl font-bold mb-4">Interview Coach</h1>
-            <p className="text-xl">Master your interview skills with AI-powered feedback</p>
-          </div>
-        </div>
+        <div className="absolute inset-0 bg-black/0" />
       </div>
 
       {/* Right side with form */}
-      <div className="flex w-full md:w-1/2 items-center justify-center p-8 bg-gray-50">
+      <div className="flex w-full md:w-1/2 items-center justify-center p-8 bg-balck/0 ">
         <Card className="w-full max-w-md shadow-xl border-0">
           <CardHeader className="text-center pb-6">
             <CardTitle className="text-3xl font-bold text-gray-800">
@@ -161,7 +156,10 @@ export default function AuthPage() {
           <CardContent className="space-y-6">
             {/* Email Field */}
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium text-gray-700">
+              <Label
+                htmlFor="email"
+                className="text-sm font-medium text-gray-700"
+              >
                 Email Address
               </Label>
               <div className="relative">
@@ -180,7 +178,10 @@ export default function AuthPage() {
 
             {/* Password Field */}
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+              <Label
+                htmlFor="password"
+                className="text-sm font-medium text-gray-700"
+              >
                 Password
               </Label>
               <div className="relative">
@@ -199,7 +200,11 @@ export default function AuthPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -213,7 +218,9 @@ export default function AuthPage() {
               {loading ? (
                 <div className="flex items-center space-x-2">
                   <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
-                  <span>{isSignUp ? "Creating Account..." : "Signing In..."}</span>
+                  <span>
+                    {isSignUp ? "Creating Account..." : "Signing In..."}
+                  </span>
                 </div>
               ) : (
                 <span>{isSignUp ? "Create Account" : "Sign In"}</span>
@@ -259,7 +266,9 @@ export default function AuthPage() {
             {/* Toggle Mode */}
             <div className="text-center">
               <p className="text-gray-600">
-                {isSignUp ? "Already have an account?" : "Don't have an account?"}
+                {isSignUp
+                  ? "Already have an account?"
+                  : "Don't have an account?"}
                 <button
                   onClick={() => {
                     setIsSignUp(!isSignUp);

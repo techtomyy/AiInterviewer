@@ -9,6 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import ProgressChart from "@/components/ProgressChart";
 import { Link, useLocation } from "wouter";
 import { supabase } from "@/lib/supabaseClient";
+import JobInputModal from "@/components/JobInputModal";
+import { InterviewInput } from "@/services/interviewService";
 
 import {
   Dialog,
@@ -40,6 +42,8 @@ export default function Dashboard({ user }: DashboardProps) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [openVideoUrl, setOpenVideoUrl] = useState<string | null>(null);
+  const [jobInputModalOpen, setJobInputModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
 
   // 📊 Fetch sessions using email fallback, in case local user_id mapping differs
@@ -258,6 +262,34 @@ export default function Dashboard({ user }: DashboardProps) {
   // 🔒 Authentication is now handled by withAuth HOC wrapper
   // No need for duplicate redirect logic here
 
+  // Handle job input submission
+  const handleJobInputSubmit = async (data: InterviewInput) => {
+    setLoading(true);
+    try {
+      // Save job input to localStorage for the AI interview flow
+      localStorage.setItem("ai-interview-job-input", JSON.stringify(data));
+
+      // Close modal
+      setJobInputModalOpen(false);
+
+      // Navigate to AI interview page
+      navigate("/ai-interview");
+
+      toast({
+        title: "Job information saved",
+        description: "Redirecting to AI Interview Assistant...",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to process job information. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const conversions = conversionsData ?? []; // ✅ always an array
 
   // Helper function to get conversion status for a session
@@ -418,7 +450,7 @@ export default function Dashboard({ user }: DashboardProps) {
                 </Button>
               </Link>
               <h1 className="text-2xl font-bold text-neutral">
-                Interview Dashboard
+                Job Role / Job Position
               </h1>
             </div>
             <div className="flex items-center space-x-4">
@@ -430,15 +462,14 @@ export default function Dashboard({ user }: DashboardProps) {
                 </div>
                 <span className="text-gray-700">{user?.email}</span>
               </div>
-              <Link href="/interview">
-                <Button
-                  className="bg-primary hover:bg-blue-800"
-                  data-testid="button-new-interview"
-                >
-                  <PlayCircle className="h-4 w-4 mr-2" />
-                  New Interview
-                </Button>
-              </Link>
+              <Button
+                className="bg-primary hover:bg-blue-800"
+                data-testid="button-new-interview"
+                onClick={() => setJobInputModalOpen(true)}
+              >
+                <PlayCircle className="h-4 w-4 mr-2" />
+                New Interview
+              </Button>
               {/* 🚀 Logout button */}
               <Button
                 variant="outline"
@@ -569,12 +600,13 @@ export default function Dashboard({ user }: DashboardProps) {
                 <p className="text-gray-500 mb-6">
                   Start your first interview to see your progress here.
                 </p>
-                <Link href="/interview">
-                  <Button className="bg-primary hover:bg-blue-800">
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    Start Your First Interview
-                  </Button>
-                </Link>
+                <Button
+                  className="bg-primary hover:bg-blue-800"
+                  onClick={() => setJobInputModalOpen(true)}
+                >
+                  <PlayCircle className="h-4 w-4 mr-2" />
+                  Start Your First Interview
+                </Button>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -929,20 +961,19 @@ export default function Dashboard({ user }: DashboardProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Link href="/interview">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto p-4"
-                >
-                  <div className="text-left">
-                    <PlayCircle className="h-6 w-6 text-blue-600 mb-2" />
-                    <div className="font-medium">Start New Interview</div>
-                    <div className="text-sm text-gray-500">
-                      Practice with new questions
-                    </div>
+              <Button
+                variant="outline"
+                className="w-full justify-start h-auto p-4"
+                onClick={() => setJobInputModalOpen(true)}
+              >
+                <div className="text-left">
+                  <PlayCircle className="h-6 w-6 text-blue-600 mb-2" />
+                  <div className="font-medium">Start New Interview</div>
+                  <div className="text-sm text-gray-500">
+                    Practice with new questions
                   </div>
-                </Button>
-              </Link>
+                </div>
+              </Button>
 
               <Link href="/dashboard">
                 <Button
@@ -962,12 +993,14 @@ export default function Dashboard({ user }: DashboardProps) {
               <Button
                 variant="outline"
                 className="w-full justify-start h-auto p-4"
-                disabled
+                onClick={() => setJobInputModalOpen(true)}
               >
                 <div className="text-left">
                   <Brain className="h-6 w-6 text-purple-600 mb-2" />
-                  <div className="font-medium">AI Analysis</div>
-                  <div className="text-sm text-gray-500">Coming soon</div>
+                  <div className="font-medium">AI Interview Assistant</div>
+                  <div className="text-sm text-gray-500">
+                    Get personalized questions and feedback
+                  </div>
                 </div>
               </Button>
             </div>
@@ -1071,6 +1104,14 @@ export default function Dashboard({ user }: DashboardProps) {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      {/* Job Input Modal */}
+      <JobInputModal
+        isOpen={jobInputModalOpen}
+        onClose={() => setJobInputModalOpen(false)}
+        onSubmit={handleJobInputSubmit}
+        loading={loading}
+      />
     </div>
   );
 }

@@ -1,0 +1,27 @@
+
+{
+  "transcription": "Um so I want to talk about my experience in machine learning ...",
+  "overall_confidence": 0.87,
+  "speech_metrics": {
+    "speech_clarity_score": 82,
+    "speaking_rate_wpm": 120,
+    "filler_words_count": 6,
+    "filler_word_timestamps": [
+      {"word":"um","start":1.2,"end":1.35},
+      {"word":"like","start":3.4,"end":3.45}
+    ],
+    "segment_transcripts": [
+      {"start":0.0,"end":15.0,"text":"Intro: ...","confidence":0.9},
+      {"start":15.0,"end":45.0,"text":"Technical experience: ...","confidence":0.85}
+    ]
+  },
+  "body_language": {
+    "eye_contact_pct": 72.5,
+    "posture_score": 78,
+    "notes": "Occasional head tilt away from camera at 00:12-00:18; shoulders slightly slouched."
+  },
+  "recommendations": [
+    "Reduce filler words; try 3-second pauses instead of 'um'.",
+    "Keep shoulders square toward camera to raise posture score."
+  ]
+}
