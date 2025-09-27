@@ -21,6 +21,8 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/candidate', require('./routes/candidate'));
+app.use('/api/interview', require('./routes/interview'));
+app.use('/api/interview', require('./routes/analysis'));
 
 // Multer setup for file upload
 const upload = multer({ storage: multer.memoryStorage() });
